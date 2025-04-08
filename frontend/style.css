@@ -1,0 +1,5 @@
+/* Basic styling for layout */
+body { font-family: sans-serif; padding: 1em; }
+#videoElement { width: 100%; max-width: 500px; border: 1px solid black; display: block; margin-bottom: 1em;}
+#captureButton { font-size: 1.2em; padding: 0.5em 1em; }
+#snapshot { margin-top: 1em; max-width: 100%; display: none; } /* Initially hidden */
