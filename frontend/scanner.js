@@ -6,15 +6,17 @@ let sessionBooks = []; // Array to hold book objects added in this session
 // --- Get references to HTML elements ---
 const video = document.getElementById('videoElement');
 const canvas = document.getElementById('canvasElement');
-const captureButton = document.getElementById('captureButton');
+// New Buttons:
+const captureCoverButton = document.getElementById('captureCoverButton');
+const captureBarcodeButton = document.getElementById('captureBarcodeButton');
 const snapshotImg = document.getElementById('snapshot');
 const context = canvas.getContext('2d');
 
 // Form Elements & Buttons
 const addBookButton = document.getElementById('addBookButton');
 const exportCsvButton = document.getElementById('exportCsvButton');
-const bookCountSpan = document.getElementById('bookCount'); // Span for counter
-const booksUl = document.getElementById('booksUl'); // UL element for the list
+const bookCountSpan = document.getElementById('bookCount');
+const booksUl = document.getElementById('booksUl');
 // Input field references
 const skuInput = document.getElementById('sku');
 const titleInput = document.getElementById('title');
@@ -51,6 +53,7 @@ const constraints = {
 };
 
 // --- SKU Generation Logic ---
+// (Keep existing SKU functions: parseSkuPattern, generateNextSku, initializeSku)
 function parseSkuPattern(startSku) {
     const match = startSku.match(/^(.+?)([0-9]+)$/);
     if (match && match[1] && match[2]) {
@@ -110,27 +113,28 @@ function initializeSku() {
 
 // --- Camera Start ---
 async function startCamera() {
-    console.log("startCamera function entered..."); // Add log inside function
+    console.log("startCamera function entered...");
     try {
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
         video.srcObject = stream;
         console.log("Camera stream started.");
     } catch (err) {
-        console.error("Error accessing camera: ", err); // This should log if getUserMedia fails
+        console.error("Error accessing camera: ", err);
         alert("Could not access camera. Please ensure permission is granted and potentially using HTTPS.");
     }
 }
 
-// --- Capture Button Logic ---
-captureButton.addEventListener('click', () => {
-    console.log("Capture button clicked.");
-    // Add check for video stream
+// --- NEW: Shared Function for Capturing and Sending Data ---
+function captureAndSend(scanType) {
+    console.log(`Capture button clicked for type: ${scanType}`);
+
+     // Check for video stream
     if (!video.srcObject || !video.srcObject.active) {
         console.error("Video stream not active.");
         alert("Camera stream not available. Please allow permission and refresh.");
         return;
     }
-    // Add check for video dimensions
+     // Check for video dimensions
     if (!video.videoWidth || !video.videoHeight) {
          console.error("Video dimensions not available yet.");
          alert("Video not ready yet. Please wait a moment and try again.");
@@ -145,6 +149,7 @@ captureButton.addEventListener('click', () => {
     snapshotImg.style.display = 'block';
     console.log("Snapshot taken and displayed.");
 
+    // Generate Next SKU and place in form immediately
     const nextSku = generateNextSku();
     if (nextSku !== null) { skuInput.value = nextSku; } else { skuInput.value = ''; }
 
@@ -152,7 +157,10 @@ captureButton.addEventListener('click', () => {
     fetch('https://us-central1-aob-scanner.cloudfunctions.net/book-scanner-process-image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image_data: imageDataUrl }),
+        body: JSON.stringify({
+            image_data: imageDataUrl,
+            scan_type: scanType // Send scan type ('cover' or 'barcode')
+        }),
     })
     .then(response => {
         if (!response.ok) {
@@ -164,48 +172,64 @@ captureButton.addEventListener('click', () => {
     .then(data => {
         console.log('Data received from backend:', data);
 
-        // Populate Form Fields
+        // --- Populate Form Fields ---
+        // This logic might need adjustment based on backend response changes
+        // e.g., if barcode lookup returns different fields than parsing
         if (data) {
-            // (Keep existing populate logic...)
-             if (data.parsed_fields) {
-                 titleInput.value = data.parsed_fields.title || '';
-                 authorInput.value = data.parsed_fields.author || '';
-                 isbnInput.value = data.parsed_fields.isbn || '';
-                 editionInput.value = data.parsed_fields.edition || '';
-                 languageInput.value = data.parsed_fields.language || 'English';
-             } else {
-                  titleInput.value = ''; authorInput.value = ''; isbnInput.value = '';
-                  editionInput.value = ''; languageInput.value = 'English';
-             }
-             imageUrlInput.value = data.image_url || '';
-             conditionSelect.value = '3'; conditionTextInput.value = ''; priceInput.value = '';
-             notesInput.value = ''; publisherInput.value = ''; releaseDateInput.value = '';
-             mediaInput.value = ''; locationInput.value = ''; costInput.value = '';
-             sourceInput.value = ''; signedFlagCheckbox.checked = false;
-             console.log("Relevant form fields populated/reset after capture.");
+            // Prioritize parsed/looked-up fields if available
+            const fields = data.parsed_fields || {}; // Use empty obj if missing
+            titleInput.value = fields.title || '';
+            authorInput.value = fields.author || '';
+            isbnInput.value = fields.isbn || '';
+            editionInput.value = fields.edition || ''; // Populate if backend provides
+            languageInput.value = fields.language || 'English'; // Populate if backend provides
+            publisherInput.value = fields.publisher || ''; // Populate if backend provides
+            releaseDateInput.value = fields.release_date || ''; // Populate if backend provides
+            mediaInput.value = fields.media || ''; // Populate if backend provides
+
+            // Use image_url (should be stock photo if barcode scan chose Option B)
+            // Or maybe have separate field? For now, use main one.
+            imageUrlInput.value = data.image_url || '';
+
+            // Clear/reset other manual entry fields
+            conditionSelect.value = '3';
+            conditionTextInput.value = '';
+            priceInput.value = '';
+            notesInput.value = '';
+            locationInput.value = '';
+            costInput.value = '';
+            sourceInput.value = '';
+            signedFlagCheckbox.checked = false; // Assume not signed unless specified
+
+            console.log("Relevant form fields populated/reset after capture.");
         }
+         // --- End Populate Form Fields ---
+
         alert("Image processed! Review details and click 'Add Book'.");
     })
     .catch((error) => {
         console.error('Error sending image to backend:', error);
         alert(`Failed to process image. Error: ${error.message}. Check browser console.`);
     });
-});
+}
+
+// --- Attach Listeners to NEW Capture Buttons ---
+if (captureCoverButton) {
+    captureCoverButton.addEventListener('click', () => captureAndSend('cover'));
+} else { console.error("Capture Cover Button not found"); }
+
+if (captureBarcodeButton) {
+    captureBarcodeButton.addEventListener('click', () => captureAndSend('barcode'));
+} else { console.error("Capture Barcode Button not found"); }
+// --- End New Capture Button Listeners ---
+
 
 // --- Function to update the displayed list of books ---
 function renderSessionBooks() {
-    // Add check if element exists before using it
-    if (!booksUl || !bookCountSpan) {
-         console.error("Book list UL or Count Span not found in HTML.");
-         return;
-    }
-    booksUl.innerHTML = ''; // Clear the current list
-    bookCountSpan.innerText = sessionBooks.length; // Update counter span
-
-    if (sessionBooks.length === 0) {
-        booksUl.innerHTML = '<li>No books added yet.</li>';
-        return;
-    }
+    if (!booksUl || !bookCountSpan) { console.error("Book list UL or Count Span not found."); return; }
+    booksUl.innerHTML = '';
+    bookCountSpan.innerText = sessionBooks.length;
+    if (sessionBooks.length === 0) { booksUl.innerHTML = '<li>No books added yet.</li>'; return; }
     sessionBooks.forEach((book, index) => {
         const listItem = document.createElement('li');
         listItem.textContent = `[${index + 1}] ${book.sku}: ${book.title || 'N/A'} by ${book.author || 'N/A'} - Price: ${book.price || 'N/A'}`;
@@ -214,7 +238,6 @@ function renderSessionBooks() {
 }
 
 // --- Add Book Button Logic ---
-// Add check if button exists before adding listener
 if (addBookButton) {
     addBookButton.addEventListener('click', () => {
         console.log("Add Book button clicked.");
@@ -250,7 +273,8 @@ if (addBookButton) {
             condition: parseInt(condition, 10), cond_text: condText, price: price, qty: qtyInt,
             notes: notes, publisher: publisher, release_date: releaseDate, media: media,
             location: location, cost: cost ? parseFloat(cost) : null, source: source,
-            image: imageUrl, signature: isSigned ? "Signed" : "", edition: edition, language: language
+            image: imageUrl, // This now might be stock photo URL if barcode scanned
+            signature: isSigned ? "Signed" : "", edition: edition, language: language
         };
 
         sessionBooks.push(bookData);
@@ -264,11 +288,8 @@ if (addBookButton) {
         snapshotImg.src = '';
         snapshotImg.style.display = 'none';
     });
-} else {
-    console.error("Add Book button not found.");
-}
+} else { console.error("Add Book button not found."); }
 // --- End Add Book Button Logic ---
-
 
 // --- Helper Button Logic ---
 function setInputValue(elementId, value) {
@@ -276,7 +297,6 @@ function setInputValue(elementId, value) {
     if (inputElement) { inputElement.value = value; }
     else { console.error(`Element with ID ${elementId} not found for helper button.`); }
 }
-// Add checks if buttons exist before adding listeners
 if (btn1stEd) { btn1stEd.addEventListener('click', () => setInputValue('edition', 'First Edition')); } else { console.warn("btn1stEd not found"); }
 if (btnMediaPB) { btnMediaPB.addEventListener('click', () => setInputValue('media', 'Paperback')); } else { console.warn("btnMediaPB not found"); }
 if (btnMediaHC) { btnMediaHC.addEventListener('click', () => setInputValue('media', 'Hardcover')); } else { console.warn("btnMediaHC not found"); }
@@ -285,6 +305,7 @@ if (btnMediaDVD) { btnMediaDVD.addEventListener('click', () => setInputValue('me
 // --- End Helper Button Logic ---
 
 // --- CSV Export Logic ---
+// (Keep existing CSV export functions: escapeCsvCell, exportBooksToCsv)
 function escapeCsvCell(value) {
     if (value == null) { return ''; }
     const stringValue = String(value);
@@ -331,9 +352,8 @@ if (exportCsvButton) { exportCsvButton.addEventListener('click', exportBooksToCs
 else { console.error("Export CSV button not found."); }
 // --- End CSV Export Logic ---
 
-
 // --- Initialize Page ---
 initializeSku(); // Check/prompt for SKU pattern on page load first
 renderSessionBooks(); // Render empty list initially
-console.log("--- Script loaded, attempting to start camera ---"); // ADDED THIS LOG
+console.log("--- Script loaded, attempting to start camera ---");
 startCamera(); // Start camera after other initial setup
