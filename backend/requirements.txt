@@ -1,7 +1,5 @@
-Flask>=2.0
-google-cloud-vision
+functions-framework>=3.0
 google-cloud-storage
-functions-framework
-Pillow
 python-dotenv
-Flask-Cors
+Pillow
+google-cloud-vision

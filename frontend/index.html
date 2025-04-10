@@ -5,6 +5,30 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Book Scanner</title>
     <link rel="stylesheet" href="style.css">
+    <style>
+        /* Basic styling for helper buttons/links */
+        .field-helpers button, .field-helpers span { margin-left: 5px; cursor: pointer; color: blue; text-decoration: underline; background: none; border: none; padding: 0; font-size: 0.9em; }
+        /* Basic styling for form layout */
+        #bookDetailsForm div { margin-bottom: 10px; }
+        #bookDetailsForm label { display: inline-block; min-width: 150px; vertical-align: top; }
+        #bookDetailsForm input[type="text"],
+        #bookDetailsForm input[type="number"],
+        #bookDetailsForm select,
+        #bookDetailsForm textarea { width: calc(90% - 160px); /* Adjust width considering label */ box-sizing: border-box; }
+        #bookDetailsForm textarea { vertical-align: top; }
+        #bookDetailsForm input[type="checkbox"] { width: auto; margin-right: 5px;}
+        #bookDetailsForm input[readonly] { background-color: #eee; }
+        /* Responsive adjustments */
+        @media (max-width: 600px) {
+            #bookDetailsForm label { min-width: 100px; }
+             #bookDetailsForm input[type="text"],
+             #bookDetailsForm input[type="number"],
+             #bookDetailsForm select,
+             #bookDetailsForm textarea { width: calc(100% - 110px); }
+             #bookDetailsForm input[style*="width"],
+             #bookDetailsForm textarea[style*="width"] { width: calc(100% - 110px) !important; } /* Override inline styles */
+        }
+    </style>
 </head>
 <body>
 
@@ -17,6 +41,108 @@
 
     <h2>Snapshot:</h2>
     <img id="snapshot" src="" alt="Captured image"/>
+
+    <hr>
+    <h2>Book Details</h2>
+    <div id="bookDetailsForm">
+        <div>
+            <label for="sku">SKU:</label>
+            <input type="text" id="sku" name="sku" maxlength="24">
+        </div>
+        <div>
+            <label for="title">Title:</label>
+            <input type="text" id="title" name="title">
+        </div>
+        <div>
+            <label for="author">Author:</label>
+            <input type="text" id="author" name="author">
+        </div>
+        <div>
+            <label for="isbn">ISBN:</label>
+            <input type="text" id="isbn" name="isbn">
+        </div>
+         <div>
+            <label for="condition">Condition:</label>
+            <select id="condition" name="condition">
+                <option value="11">New</option>
+                <option value="1">Like New</option>
+                <option value="2">Very Good</option>
+                <option value="3" selected>Good</option>
+                <option value="4">Acceptable</option>
+            </select>
+        </div>
+        <div>
+            <label for="condition_text">Condition Notes:</label>
+            <input type="text" id="condition_text" name="condition_text" maxlength="32"> </div>
+         <div>
+            <label for="price">Price:</label>
+            <input type="text" id="price" name="price">
+        </div>
+        <div>
+            <label for="qty">Quantity:</label>
+            <input type="number" id="qty" name="qty" value="1" min="1" step="1">
+        </div>
+        <div>
+            <label for="publisher">Publisher:</label>
+            <input type="text" id="publisher" name="publisher">
+        </div>
+         <div> <label for="signed_flag">Signed?</label>
+            <input type="checkbox" id="signed_flag" name="signed_flag">
+        </div>
+        <div> <label for="edition">Edition Details:</label>
+            <input type="text" id="edition" name="edition" maxlength="32" placeholder="e.g., 1st Edition">
+            <span class="field-helpers">
+                 <button type="button" id="btn1stEd">1st</button>
+            </span>
+        </div>
+         <div> <label for="language">Language:</label>
+            <input type="text" id="language" name="language" value="English">
+        </div>
+        <div> <label for="media">Media:</label>
+            <input type="text" id="media" name="media" placeholder="e.g., Paperback">
+            <span class="field-helpers">
+                <button type="button" id="btnMediaPB">PB</button>
+                <button type="button" id="btnMediaHC">HC</button>
+                <button type="button" id="btnMediaCD">CD</button>
+                <button type="button" id="btnMediaDVD">DVD</button>
+            </span>
+        </div>
+        <div>
+            <label for="notes">Notes (Desc/Feat):</label> <textarea id="notes" name="notes" rows="3"></textarea>
+        </div>
+         <div>
+            <label for="release_date">Release Date:</label>
+            <input type="text" id="release_date" name="release_date" placeholder="YYYY-MM-DD">
+        </div>
+         <div>
+            <label for="location">Location (Shelf):</label>
+            <input type="text" id="location" name="location">
+        </div>
+        <div>
+            <label for="cost">Cost (Optional):</label>
+            <input type="number" id="cost" name="cost" step="0.01">
+        </div>
+        <div>
+            <label for="source">Source:</label>
+            <input type="text" id="source" name="source" maxlength="32">
+        </div>
+         <div>
+            <label for="image_url">Image URL:</label>
+            <input type="text" id="image_url" name="image_url" readonly>
+         </div>
+
+        <hr>
+        <button type="button" id="addBookButton" style="padding: 10px; margin-top: 15px; font-size: 1.1em;">Add Book to Session List</button>
+
+    </div> <div id="sessionBooksList" style="margin-top: 20px;">
+        <h2>Books Added This Session: <span id="bookCount">0</span></h2>
+        <ul id="booksUl"></ul>
+    </div>
+
+    <div id="exportSection" style="margin-top: 20px;">
+         <button type="button" id="exportCsvButton" style="padding: 10px; font-size: 1.1em;">Export List to CSV</button>
+    </div>
+
 
     <script src="scanner.js"></script>
 
