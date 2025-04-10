@@ -6,9 +6,7 @@ let sessionBooks = []; // Array to hold book objects added in this session
 // --- Get references to HTML elements ---
 const video = document.getElementById('videoElement');
 const canvas = document.getElementById('canvasElement');
-// New Buttons:
-const captureCoverButton = document.getElementById('captureCoverButton');
-const captureBarcodeButton = document.getElementById('captureBarcodeButton');
+const captureButton = document.getElementById('captureButton'); // Back to single button ID
 const snapshotImg = document.getElementById('snapshot');
 const context = canvas.getContext('2d');
 
@@ -124,107 +122,87 @@ async function startCamera() {
     }
 }
 
-// --- NEW: Shared Function for Capturing and Sending Data ---
-function captureAndSend(scanType) {
-    console.log(`Capture button clicked for type: ${scanType}`);
+// --- Capture Button Logic (Single Button) ---
+// Make sure captureButton reference exists before adding listener
+if (captureButton) {
+    captureButton.addEventListener('click', () => {
+        console.log("Capture button clicked."); // No scan type needed
 
-     // Check for video stream
-    if (!video.srcObject || !video.srcObject.active) {
-        console.error("Video stream not active.");
-        alert("Camera stream not available. Please allow permission and refresh.");
-        return;
-    }
-     // Check for video dimensions
-    if (!video.videoWidth || !video.videoHeight) {
-         console.error("Video dimensions not available yet.");
-         alert("Video not ready yet. Please wait a moment and try again.");
-         return;
-    }
+        if (!video.srcObject || !video.srcObject.active) { console.error("Video stream not active."); alert("Camera stream not available."); return; }
+        if (!video.videoWidth || !video.videoHeight) { console.error("Video dimensions not available."); alert("Video not ready yet."); return; }
 
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    context.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const imageDataUrl = canvas.toDataURL('image/jpeg', 0.9);
-    snapshotImg.src = imageDataUrl;
-    snapshotImg.style.display = 'block';
-    console.log("Snapshot taken and displayed.");
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const imageDataUrl = canvas.toDataURL('image/jpeg', 0.9);
+        snapshotImg.src = imageDataUrl;
+        snapshotImg.style.display = 'block';
+        console.log("Snapshot taken and displayed.");
 
-    // Generate Next SKU and place in form immediately
-    const nextSku = generateNextSku();
-    if (nextSku !== null) { skuInput.value = nextSku; } else { skuInput.value = ''; }
+        const nextSku = generateNextSku();
+        if (nextSku !== null) { skuInput.value = nextSku; } else { skuInput.value = ''; }
 
-    console.log("Attempting to send image data to deployed backend...");
-    fetch('https://us-central1-aob-scanner.cloudfunctions.net/book-scanner-process-image', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            image_data: imageDataUrl,
-            scan_type: scanType // Send scan type ('cover' or 'barcode')
-        }),
-    })
-    .then(response => {
-        if (!response.ok) {
-             return response.json().then(errData => { throw new Error(`HTTP error! status: ${response.status}, message: ${errData.error || 'Unknown error'}`); })
-                           .catch(() => { throw new Error(`HTTP error! status: ${response.status}`); });
-        }
-        return response.json();
-    })
-    .then(data => {
-        console.log('Data received from backend:', data);
+        console.log("Attempting to send image data to deployed backend...");
+        fetch('https://us-central1-aob-scanner.cloudfunctions.net/book-scanner-process-image', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            // No longer sending scan_type in the body
+            body: JSON.stringify({ image_data: imageDataUrl }),
+        })
+        .then(response => {
+            if (!response.ok) {
+                 return response.json().then(errData => { throw new Error(`HTTP error! status: ${response.status}, message: ${errData.error || 'Unknown error'}`); })
+                               .catch(() => { throw new Error(`HTTP error! status: ${response.status}`); });
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log('Data received from backend:', data);
 
-        // --- Populate Form Fields ---
-        // This logic might need adjustment based on backend response changes
-        // e.g., if barcode lookup returns different fields than parsing
-        if (data) {
-            // Prioritize parsed/looked-up fields if available
-            const fields = data.parsed_fields || {}; // Use empty obj if missing
-            titleInput.value = fields.title || '';
-            authorInput.value = fields.author || '';
-            isbnInput.value = fields.isbn || '';
-            editionInput.value = fields.edition || ''; // Populate if backend provides
-            languageInput.value = fields.language || 'English'; // Populate if backend provides
-            publisherInput.value = fields.publisher || ''; // Populate if backend provides
-            releaseDateInput.value = fields.release_date || ''; // Populate if backend provides
-            mediaInput.value = fields.media || ''; // Populate if backend provides
+            // --- Populate Form Fields ---
+            if (data) {
+                // Populate based on the backend response structure we expect from the reverted backend
+                if (data.parsed_fields) {
+                    titleInput.value = data.parsed_fields.title || '';
+                    authorInput.value = data.parsed_fields.author || '';
+                    isbnInput.value = data.parsed_fields.isbn || '';
+                    // These fields won't be populated by the reverted backend's basic parsing
+                    editionInput.value = '';
+                    languageInput.value = 'English'; // Reset
+                    publisherInput.value = '';
+                    releaseDateInput.value = '';
+                    mediaInput.value = '';
+                } else {
+                    // Clear fields if parsed_fields object is missing
+                    titleInput.value = ''; authorInput.value = ''; isbnInput.value = '';
+                    editionInput.value = ''; languageInput.value = 'English';
+                    publisherInput.value = ''; releaseDateInput.value = ''; mediaInput.value = '';
+                }
+                imageUrlInput.value = data.image_url || ''; // Should be captured image URL
 
-            // Use image_url (should be stock photo if barcode scan chose Option B)
-            // Or maybe have separate field? For now, use main one.
-            imageUrlInput.value = data.image_url || '';
+                // Clear/reset other manual entry fields
+                conditionSelect.value = '3'; conditionTextInput.value = ''; priceInput.value = '';
+                notesInput.value = ''; locationInput.value = ''; costInput.value = '';
+                sourceInput.value = ''; signedFlagCheckbox.checked = false;
+                console.log("Relevant form fields populated/reset after capture.");
+            }
+            // --- End Populate Form Fields ---
 
-            // Clear/reset other manual entry fields
-            conditionSelect.value = '3';
-            conditionTextInput.value = '';
-            priceInput.value = '';
-            notesInput.value = '';
-            locationInput.value = '';
-            costInput.value = '';
-            sourceInput.value = '';
-            signedFlagCheckbox.checked = false; // Assume not signed unless specified
-
-            console.log("Relevant form fields populated/reset after capture.");
-        }
-         // --- End Populate Form Fields ---
-
-        alert("Image processed! Review details and click 'Add Book'.");
-    })
-    .catch((error) => {
-        console.error('Error sending image to backend:', error);
-        alert(`Failed to process image. Error: ${error.message}. Check browser console.`);
+            alert("Image processed! Review details and click 'Add Book'.");
+        })
+        .catch((error) => {
+            console.error('Error sending image to backend:', error);
+            alert(`Failed to process image. Error: ${error.message}. Check browser console.`);
+        });
     });
+} else {
+    console.error("Capture button not found. Check HTML ID.");
 }
-
-// --- Attach Listeners to NEW Capture Buttons ---
-if (captureCoverButton) {
-    captureCoverButton.addEventListener('click', () => captureAndSend('cover'));
-} else { console.error("Capture Cover Button not found"); }
-
-if (captureBarcodeButton) {
-    captureBarcodeButton.addEventListener('click', () => captureAndSend('barcode'));
-} else { console.error("Capture Barcode Button not found"); }
-// --- End New Capture Button Listeners ---
+// --- End Capture Button Logic ---
 
 
 // --- Function to update the displayed list of books ---
+// (Keep existing renderSessionBooks function)
 function renderSessionBooks() {
     if (!booksUl || !bookCountSpan) { console.error("Book list UL or Count Span not found."); return; }
     booksUl.innerHTML = '';
@@ -238,6 +216,7 @@ function renderSessionBooks() {
 }
 
 // --- Add Book Button Logic ---
+// (Keep existing addBookButton listener)
 if (addBookButton) {
     addBookButton.addEventListener('click', () => {
         console.log("Add Book button clicked.");
@@ -273,8 +252,7 @@ if (addBookButton) {
             condition: parseInt(condition, 10), cond_text: condText, price: price, qty: qtyInt,
             notes: notes, publisher: publisher, release_date: releaseDate, media: media,
             location: location, cost: cost ? parseFloat(cost) : null, source: source,
-            image: imageUrl, // This now might be stock photo URL if barcode scanned
-            signature: isSigned ? "Signed" : "", edition: edition, language: language
+            image: imageUrl, signature: isSigned ? "Signed" : "", edition: edition, language: language
         };
 
         sessionBooks.push(bookData);
@@ -291,7 +269,9 @@ if (addBookButton) {
 } else { console.error("Add Book button not found."); }
 // --- End Add Book Button Logic ---
 
+
 // --- Helper Button Logic ---
+// (Keep existing helper button logic)
 function setInputValue(elementId, value) {
     const inputElement = document.getElementById(elementId);
     if (inputElement) { inputElement.value = value; }
@@ -314,14 +294,11 @@ function escapeCsvCell(value) {
     }
     return stringValue;
 }
-
 function exportBooksToCsv() {
-    if (sessionBooks.length === 0) {
-        alert("No books have been added to the session list yet!");
-        return;
-    }
+    // (Keep existing export logic...)
+    if (sessionBooks.length === 0) { alert("No books have been added..."); return; }
     console.log("Generating CSV for", sessionBooks.length, "books.");
-    const headers = [
+    const headers = [ /* Keep headers matching bookData keys */
         'sku', 'title', 'author', 'isbn', 'condition', 'cond_text', 'price', 'qty',
         'notes', 'publisher', 'release_date', 'media', 'location', 'cost', 'source',
         'image', 'signature', 'edition', 'language'
@@ -344,13 +321,12 @@ function exportBooksToCsv() {
         document.body.removeChild(link);
         URL.revokeObjectURL(url);
         console.log("CSV download initiated.");
-    } else {
-        alert("CSV download is not supported in this browser.");
-    }
+    } else { alert("CSV download is not supported..."); }
 }
 if (exportCsvButton) { exportCsvButton.addEventListener('click', exportBooksToCsv); }
 else { console.error("Export CSV button not found."); }
 // --- End CSV Export Logic ---
+
 
 // --- Initialize Page ---
 initializeSku(); // Check/prompt for SKU pattern on page load first
