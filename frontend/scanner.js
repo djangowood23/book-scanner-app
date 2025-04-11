@@ -6,7 +6,7 @@ let sessionBooks = []; // Array to hold book objects added in this session
 // --- Get references to HTML elements ---
 const video = document.getElementById('videoElement');
 const canvas = document.getElementById('canvasElement');
-const captureButton = document.getElementById('captureButton'); // Back to single button ID
+const captureButton = document.getElementById('captureButton'); // Single capture button
 const snapshotImg = document.getElementById('snapshot');
 const context = canvas.getContext('2d');
 
@@ -123,10 +123,9 @@ async function startCamera() {
 }
 
 // --- Capture Button Logic (Single Button) ---
-// Make sure captureButton reference exists before adding listener
 if (captureButton) {
     captureButton.addEventListener('click', () => {
-        console.log("Capture button clicked."); // No scan type needed
+        console.log("Capture button clicked.");
 
         if (!video.srcObject || !video.srcObject.active) { console.error("Video stream not active."); alert("Camera stream not available."); return; }
         if (!video.videoWidth || !video.videoHeight) { console.error("Video dimensions not available."); alert("Video not ready yet."); return; }
@@ -146,8 +145,7 @@ if (captureButton) {
         fetch('https://us-central1-aob-scanner.cloudfunctions.net/book-scanner-process-image', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            // No longer sending scan_type in the body
-            body: JSON.stringify({ image_data: imageDataUrl }),
+            body: JSON.stringify({ image_data: imageDataUrl }), // No scan_type needed
         })
         .then(response => {
             if (!response.ok) {
@@ -159,26 +157,24 @@ if (captureButton) {
         .then(data => {
             console.log('Data received from backend:', data);
 
-            // --- Populate Form Fields ---
+            // Populate Form Fields
             if (data) {
-                // Populate based on the backend response structure we expect from the reverted backend
                 if (data.parsed_fields) {
                     titleInput.value = data.parsed_fields.title || '';
                     authorInput.value = data.parsed_fields.author || '';
                     isbnInput.value = data.parsed_fields.isbn || '';
-                    // These fields won't be populated by the reverted backend's basic parsing
+                    // Clear fields not reliably parsed by basic backend yet
                     editionInput.value = '';
-                    languageInput.value = 'English'; // Reset
+                    languageInput.value = 'English';
                     publisherInput.value = '';
                     releaseDateInput.value = '';
                     mediaInput.value = '';
                 } else {
-                    // Clear fields if parsed_fields object is missing
                     titleInput.value = ''; authorInput.value = ''; isbnInput.value = '';
                     editionInput.value = ''; languageInput.value = 'English';
                     publisherInput.value = ''; releaseDateInput.value = ''; mediaInput.value = '';
                 }
-                imageUrlInput.value = data.image_url || ''; // Should be captured image URL
+                imageUrlInput.value = data.image_url || ''; // Use captured image URL
 
                 // Clear/reset other manual entry fields
                 conditionSelect.value = '3'; conditionTextInput.value = ''; priceInput.value = '';
@@ -186,8 +182,6 @@ if (captureButton) {
                 sourceInput.value = ''; signedFlagCheckbox.checked = false;
                 console.log("Relevant form fields populated/reset after capture.");
             }
-            // --- End Populate Form Fields ---
-
             alert("Image processed! Review details and click 'Add Book'.");
         })
         .catch((error) => {
@@ -195,14 +189,11 @@ if (captureButton) {
             alert(`Failed to process image. Error: ${error.message}. Check browser console.`);
         });
     });
-} else {
-    console.error("Capture button not found. Check HTML ID.");
-}
+} else { console.error("Capture button not found."); }
 // --- End Capture Button Logic ---
 
 
 // --- Function to update the displayed list of books ---
-// (Keep existing renderSessionBooks function)
 function renderSessionBooks() {
     if (!booksUl || !bookCountSpan) { console.error("Book list UL or Count Span not found."); return; }
     booksUl.innerHTML = '';
@@ -216,7 +207,6 @@ function renderSessionBooks() {
 }
 
 // --- Add Book Button Logic ---
-// (Keep existing addBookButton listener)
 if (addBookButton) {
     addBookButton.addEventListener('click', () => {
         console.log("Add Book button clicked.");
@@ -247,12 +237,29 @@ if (addBookButton) {
         if (isNaN(qtyInt) || qtyInt < 1) { alert("Quantity must be at least 1."); return; }
         if (!title && !isbn) { alert("Either Title or ISBN is required."); return; }
 
+        // Create book data object using Zoobilee lowercase headers
+        // Order matches the 'headers' array in exportBooksToCsv
         const bookData = {
-            sku: sku, title: title, author: author, isbn: isbn,
-            condition: parseInt(condition, 10), cond_text: condText, price: price, qty: qtyInt,
-            notes: notes, publisher: publisher, release_date: releaseDate, media: media,
-            location: location, cost: cost ? parseFloat(cost) : null, source: source,
-            image: imageUrl, signature: isSigned ? "Signed" : "", edition: edition, language: language
+            sku: sku,
+            location: location, // Moved up per Zoobilee export order
+            cost: cost ? parseFloat(cost) : null, // Moved up
+            source: source, // Moved up
+            isbn: isbn, // Moved up
+            title: title,
+            author: author,
+            publisher: publisher,
+            release_date: releaseDate,
+            image: imageUrl, // Use 'image' key
+            media: media,
+            price: price,
+            condition: parseInt(condition, 10),
+            notes: notes, // Use 'notes'
+            qty: qtyInt,
+            cond_text: condText, // Use 'cond_text' key
+            edition: edition,
+            signature: isSigned ? "Signed" : "", // Use 'signature' key
+            language: language
+            // Add other keys like jcond_text, keywords, volume, weight later if needed
         };
 
         sessionBooks.push(bookData);
@@ -285,7 +292,6 @@ if (btnMediaDVD) { btnMediaDVD.addEventListener('click', () => setInputValue('me
 // --- End Helper Button Logic ---
 
 // --- CSV Export Logic ---
-// (Keep existing CSV export functions: escapeCsvCell, exportBooksToCsv)
 function escapeCsvCell(value) {
     if (value == null) { return ''; }
     const stringValue = String(value);
@@ -294,19 +300,29 @@ function escapeCsvCell(value) {
     }
     return stringValue;
 }
+
 function exportBooksToCsv() {
-    // (Keep existing export logic...)
-    if (sessionBooks.length === 0) { alert("No books have been added..."); return; }
+    if (sessionBooks.length === 0) {
+        alert("No books have been added to the session list yet!");
+        return;
+    }
     console.log("Generating CSV for", sessionBooks.length, "books.");
-    const headers = [ /* Keep headers matching bookData keys */
-        'sku', 'title', 'author', 'isbn', 'condition', 'cond_text', 'price', 'qty',
-        'notes', 'publisher', 'release_date', 'media', 'location', 'cost', 'source',
-        'image', 'signature', 'edition', 'language'
+
+    // *** UPDATED HEADER ORDER TO MATCH ZOOBILEE EXPORT ***
+    const headers = [
+        'sku', 'location', 'cost', 'source', 'isbn', 'title', 'author',
+        'publisher', 'release_date', 'image', 'media', 'price', 'condition',
+        'notes', 'qty', 'cond_text', 'edition', 'signature', 'language'
+        // Add other headers here if needed, matching the order Zoobilee expects
     ];
+
     const headerRow = headers.map(escapeCsvCell).join(',');
+
     const dataRows = sessionBooks.map(book => {
+        // Ensure data is pulled from bookData using the correct header key order
         return headers.map(header => escapeCsvCell(book[header])).join(',');
     });
+
     const csvContent = [headerRow, ...dataRows].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement("a");
@@ -321,7 +337,9 @@ function exportBooksToCsv() {
         document.body.removeChild(link);
         URL.revokeObjectURL(url);
         console.log("CSV download initiated.");
-    } else { alert("CSV download is not supported..."); }
+    } else {
+        alert("CSV download is not supported in this browser.");
+    }
 }
 if (exportCsvButton) { exportCsvButton.addEventListener('click', exportBooksToCsv); }
 else { console.error("Export CSV button not found."); }
