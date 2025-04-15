@@ -3,4 +3,5 @@ google-cloud-storage
 google-cloud-vision
 python-dotenv
 Pillow
-
+requests
+google-generativeai

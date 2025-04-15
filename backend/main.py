@@ -4,9 +4,11 @@ import base64
 import os
 import uuid
 from google.cloud import storage
-from google.cloud import vision
+import google.generativeai as genai # Import Gemini library
+import json # For parsing Gemini's JSON response
 from dotenv import load_dotenv
-import re
+# Keep requests for potential future use
+import requests
 
 logging.basicConfig(level=logging.INFO)
 load_dotenv()
@@ -14,7 +16,7 @@ load_dotenv()
 # --- Define CORS Headers ---
 CORS_HEADERS = {
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS', # Allow POST and OPTIONS for preflight
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
     'Access-Control-Max-Age': '3600'
 }
@@ -22,13 +24,26 @@ CORS_HEADERS = {
 # --- Load Environment Variables ---
 GCS_BUCKET_NAME = os.environ.get('GCS_BUCKET_NAME')
 GOOGLE_CLOUD_PROJECT = os.environ.get('GOOGLE_CLOUD_PROJECT')
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
+
+# --- Configure Gemini ---
+gemini_configured = False
+if not GEMINI_API_KEY:
+    logging.warning("GEMINI_API_KEY environment variable not set.")
+else:
+    try:
+        genai.configure(api_key=GEMINI_API_KEY)
+        gemini_configured = True
+        logging.info("Gemini API configured successfully.")
+    except Exception as config_err:
+         logging.error(f"Failed to configure Gemini API: {config_err}")
 
 if not GCS_BUCKET_NAME:
     logging.warning("GCS_BUCKET_NAME environment variable not set.")
 
 @functions_framework.http
 def handle_process_image(request):
-    """Handles OPTIONS and POST: Decodes, uploads, calls Vision (Text), parses text."""
+    """Handles OPTIONS and POST: Decodes, uploads to GCS, calls Gemini API."""
 
     # --- Handle OPTIONS preflight request ---
     if request.method == 'OPTIONS':
@@ -38,37 +53,35 @@ def handle_process_image(request):
     # --- Handle POST request ---
     elif request.method == 'POST':
         logging.info("Handling POST request")
+        scan_type = 'cover'
         image_bytes = None
-        image_url = None
+        image_url = None # URL of image uploaded to GCS
+        stock_image_url = None # URL from external lookup
         filename = None
         gcs_error = None
-        extracted_text = None
-        vision_error = None
-        parsed_title = None
-        parsed_author = None
-        parsed_isbn = None
+        gemini_error = None
+        parsed_fields_dict = None # Parsed data from Gemini
+        lookup_error = None # Placeholder for lookup error
 
-        # Prepare headers for all possible responses in POST path
         response_headers = CORS_HEADERS.copy()
         response_headers['Content-Type'] = 'application/json'
 
         try:
-            # 1. Decode Base64 Image
+            # 1. Decode Base64 Image & Get Scan Type
             try:
                 data = request.get_json(silent=True)
                 if not data or 'image_data' not in data:
                     logging.error("Missing or invalid JSON/image_data")
                     return ({'error': 'Missing or invalid image_data'}, 400, response_headers)
-
+                scan_type = data.get('scan_type', 'cover') # Get scan type
+                logging.info(f"Received scan_type: {scan_type}")
                 image_data_url = data['image_data']
                 if ';base64,' not in image_data_url:
                      logging.error(f"Invalid image data format")
                      return ({'error': 'Invalid image data format'}, 400, response_headers)
-
                 header, encoded = image_data_url.split(",", 1)
                 image_bytes = base64.b64decode(encoded)
                 logging.info(f"Decoded image size: {len(image_bytes)} bytes")
-
             except Exception as decode_error:
                 logging.error(f"Base64 Decode Error: {decode_error}")
                 return ({'error': 'Failed to decode base64 image data'}, 400, response_headers)
@@ -82,7 +95,7 @@ def handle_process_image(request):
                     blob = bucket.blob(filename)
                     logging.info(f"Uploading image to gs://{GCS_BUCKET_NAME}/{filename}")
                     blob.upload_from_string(image_bytes, content_type='image/jpeg')
-                    image_url = blob.public_url # Assumes public read access
+                    image_url = blob.public_url # URL of the actual uploaded image
                     logging.info(f"Image uploaded successfully: {image_url}")
                 except Exception as err:
                     gcs_error = f"GCS Upload Error: {err}"
@@ -91,91 +104,92 @@ def handle_process_image(request):
                  gcs_error = "GCS Bucket name not configured."
                  logging.error(gcs_error)
 
-
-            # 3. Call Google Cloud Vision API (Text Detection Only)
-            # Only proceed if GCS upload gave us a filename (or could use image_bytes)
-            response = None
-            if filename: # Using filename implies GCS upload was attempted/succeeded
+            # 3. Call Gemini Vision API
+            if image_bytes and gemini_configured:
                 try:
-                    logging.info(f"Calling Vision API for image gs://{GCS_BUCKET_NAME}/{filename}")
-                    vision_client = vision.ImageAnnotatorClient()
-                    image = vision.Image()
-                    image.source.image_uri = f"gs://{GCS_BUCKET_NAME}/{filename}"
-                    # Request only Text Detection
-                    features = [vision.Feature(type_=vision.Feature.Type.TEXT_DETECTION)]
-                    request_vision = vision.AnnotateImageRequest(image=image, features=features)
-                    response = vision_client.annotate_image(request=request_vision)
+                    logging.info("Calling Gemini API...")
+                    model = genai.GenerativeModel('gemini-1.5-flash-latest')
+                    prompt = """Analyze the provided image, which is either a book cover or contains a barcode. 
+                    Identify the following bibliographic details if available: Title, Author(s), ISBN (10 or 13), 
+                    Publisher, Publication Year (YYYY if possible), Language, Edition information, and whether 
+                    there's text indicating it's Signed. 
+                    Return ONLY a single valid JSON object containing these exact keys: 
+                    "title", "author", "isbn", "publisher", "release_date", "language", "edition", "signature". 
+                    If a field cannot be determined from the image, use null as its value. 
+                    For "author", if multiple authors, join them with commas. For "signature", return "Signed" 
+                    if evidence found, otherwise null. Ensure the output is ONLY the JSON object.
+                    """
+                    image_part = { "mime_type": "image/jpeg", "data": image_bytes }
+                    response = model.generate_content([prompt, image_part])
+                    logging.info("Gemini response received.")
 
-                    if response.error.message:
-                        vision_error = f'Vision API Error: {response.error.message}'
-                        logging.error(vision_error)
-                    elif response.full_text_annotation:
-                        extracted_text = response.full_text_annotation.text
-                        log_text_snippet = extracted_text[:100].replace('\n', ' ')
-                        logging.info(f"Vision API extracted text (first 100 chars): {log_text_snippet}...")
-                    else:
-                        logging.info("Vision API found no text annotation.")
-                        extracted_text = "" # Explicitly set empty
+                    try:
+                        response_text = response.text.strip()
+                        json_start = response_text.find('{')
+                        json_end = response_text.rfind('}')
+                        if json_start != -1 and json_end != -1 and json_end > json_start:
+                             json_text = response_text[json_start:json_end+1]
+                             parsed_fields_dict = json.loads(json_text)
+                             logging.info("Successfully parsed JSON response from Gemini.")
+                             logging.info(f"Gemini Parsed Fields: {parsed_fields_dict}")
+                        else:
+                             raise ValueError("No valid JSON object found in response text.")
+                    except (json.JSONDecodeError, AttributeError, ValueError) as json_err:
+                        gemini_error = f"Failed to parse JSON from Gemini response: {json_err} | Response text snippet: {response.text[:500]}"
+                        logging.error(gemini_error)
+                    except Exception as inner_err:
+                         gemini_error = f"Error processing Gemini response text: {inner_err}"
+                         logging.exception(gemini_error)
 
-                except Exception as vision_api_error:
-                    vision_error = f"Vision API Call Failed: {vision_api_error}"
-                    logging.exception(vision_error)
+                    if hasattr(response, 'prompt_feedback') and response.prompt_feedback.block_reason:
+                        block_reason = f"Gemini request blocked due to: {response.prompt_feedback.block_reason}"
+                        logging.error(block_reason)
+                        gemini_error = f"{gemini_error or ''} | {block_reason}".strip(" | ")
+                        parsed_fields_dict = None
+
+                except Exception as gemini_api_error:
+                    gemini_error = f"Gemini API Call Failed: {gemini_api_error}"
+                    logging.exception(gemini_api_error)
+                    parsed_fields_dict = None
+            elif not gemini_configured:
+                gemini_error = "Gemini API Key not configured or configuration failed."
+                logging.error(gemini_error)
             else:
-                 vision_error = "Skipping Vision API call because GCS filename is missing."
-                 logging.warning(vision_error)
+                 gemini_error = "Skipping Gemini API call because image decoding failed."
+                 logging.warning(gemini_error)
 
-            # 4. Basic Parsing Logic (using extracted_text)
-            if extracted_text: # Check if text exists from Vision API
-                lines = extracted_text.strip().split('\n')
-                lines = [line.strip() for line in lines if line.strip()]
-                logging.info(f"Attempting to parse {len(lines)} non-empty lines of text.")
-                # ISBN Parsing
-                isbn_pattern = re.compile(r'\b(?:ISBN(?:-1[03])?:?\s*)?((?:97[89]-?)?\d(?:-?\d){8,11}[\dX])\b', re.IGNORECASE)
-                for line in lines:
-                    match = isbn_pattern.search(line.replace(' ', ''))
-                    if match:
-                        parsed_isbn = re.sub(r'[- ]', '', match.group(1)); logging.info(f"Found potential ISBN from text: {parsed_isbn}"); break
-                # Author Parsing
-                author_line_index = -1
-                for i, line in enumerate(lines):
-                    line_lower = line.lower()
-                    if line_lower.strip() == 'by' or ' by ' in line_lower:
-                         if i + 1 < len(lines) and lines[i+1] != parsed_isbn: parsed_author = lines[i+1]; author_line_index = i+1; logging.info(f"Found potential Author from text: {parsed_author}"); break
-                    elif i > 0 and lines[i-1].lower().endswith(' by'):
-                         if lines[i] != parsed_isbn: parsed_author = lines[i]; author_line_index = i; logging.info(f"Found potential Author (alt) from text: {parsed_author}"); break
-                # Title Parsing (longest line not author/isbn)
-                longest_line = ""
-                for i, line in enumerate(lines):
-                    if i != author_line_index and len(line) > len(longest_line):
-                         # Check if parsed_isbn is None before using 'in' (TypeError fix)
-                         if len(line) > 3 and (parsed_isbn is None or parsed_isbn not in line): longest_line = line
-                if longest_line: parsed_title = longest_line; logging.info(f"Found potential Title from text: {parsed_title}")
+            # 4. Prepare final response data
+            final_parsed_fields = { # Ensure all keys exist, default to None
+                "title": None, "author": None, "isbn": None, "publisher": None,
+                "release_date": None, "language": None, "edition": None, "signature": None
+            }
+            if isinstance(parsed_fields_dict, dict):
+                 # Update with fields actually found by Gemini
+                 for key in final_parsed_fields.keys():
+                     final_parsed_fields[key] = parsed_fields_dict.get(key)
 
-            elif vision_error is None: # Log only if no text and no prior vision error
-                logging.info("No extracted text to parse.")
-            # --- End Parsing Logic ---
+            # Use stock URL if found and preferred (Option B), otherwise use captured URL
+            # Currently no logic sets stock_image_url, so defaults to captured image_url
+            final_image_url_for_aob = stock_image_url if stock_image_url else image_url
 
-            # 5. Prepare final response data
             response_data = {
-                "message": "Image processed successfully.",
-                "image_url": image_url, # This is the captured image URL from GCS
+                "message": "Image processed using Gemini.",
+                "image_url": final_image_url_for_aob,
+                "captured_image_url": image_url,
+                "stock_image_url": stock_image_url, # Include if lookup provides it
                 "gcs_error": gcs_error,
-                "vision_error": vision_error,
-                "extracted_text_raw": extracted_text, # Text from OCR
-                "parsed_fields": { # Basic parsed values
-                    "title": parsed_title,
-                    "author": parsed_author,
-                    "isbn": parsed_isbn,
-                }
+                "gemini_error": gemini_error,
+                "lookup_error": lookup_error, # Placeholder for future lookup
+                "parsed_fields": final_parsed_fields
+                # Removed extracted_text_raw
             }
             logging.info("Sending final response")
-            # Return tuple: (data, status_code, headers) including manual CORS header
             return (response_data, 200, response_headers)
 
         # Catch-all for unexpected errors during POST processing
         except Exception as e:
             logging.exception(f"Unexpected error processing POST request: {e}")
-            return ({'error': 'An unexpected internal error occurred'}, 500, response_headers) # Add CORS header
+            return ({'error': 'An unexpected internal error occurred'}, 500, response_headers)
 
     # --- Handle other methods ---
     else:
