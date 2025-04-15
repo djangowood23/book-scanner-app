@@ -23,7 +23,7 @@ CORS_HEADERS = {
 
 # --- Load Environment Variables ---
 GCS_BUCKET_NAME = os.environ.get('GCS_BUCKET_NAME')
-GOOGLE_CLOUD_PROJECT = os.environ.get('GOOGLE_CLOUD_PROJECT')
+GOOGLE_CLOUD_PROJECT = os.environ.get('GOOGLE_CLOUD_PROJECT') # May be used implicitly by clients
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
 
 # --- Configure Gemini ---
@@ -44,7 +44,7 @@ if not GCS_BUCKET_NAME:
 
 @functions_framework.http
 def handle_process_image(request):
-    """Handles OPTIONS/POST: Decodes images, uploads, calls Gemini with potentially two images."""
+    """Handles OPTIONS/POST: Decodes image(s), uploads, calls Gemini."""
 
     # --- Handle OPTIONS preflight request ---
     if request.method == 'OPTIONS':
@@ -54,6 +54,7 @@ def handle_process_image(request):
     # --- Handle POST request ---
     elif request.method == 'POST':
         logging.info("Handling POST request (V2 - multi-image)")
+        # Initialize variables
         image_bytes_1 = None
         image_bytes_2 = None
         image_url_1 = None # URL of primary image (e.g., cover)
@@ -61,7 +62,7 @@ def handle_process_image(request):
         filename_1 = None
         filename_2 = None
         gcs_error_1 = None
-        gcs_error_2 = None
+        gcs_error_2 = None # Separate error tracking if needed
         gemini_error = None
         parsed_fields_dict = None # Parsed data from Gemini
 
@@ -69,45 +70,44 @@ def handle_process_image(request):
         response_headers['Content-Type'] = 'application/json'
 
         try:
-            # 1. Decode Base64 Images
+            # 1. Decode Base64 Images from Payload
             try:
                 data = request.get_json(silent=True)
-                if not data or 'image_data_1' not in data: # Check for image_data_1
+                if not data or 'image_data_1' not in data:
                     logging.error("Missing or invalid JSON/image_data_1")
-                    return ({'error': 'Missing or invalid image_data_1'}, 400, response_headers)
+                    return ({'error': 'Missing image_data_1'}, 400, response_headers)
 
                 # Decode Image 1 (Mandatory)
                 image_data_url_1 = data['image_data_1']
                 if ';base64,' not in image_data_url_1:
-                     logging.error(f"Invalid image data format for image 1")
+                     logging.error("Invalid image data format for image 1")
                      return ({'error': 'Invalid image data format for image 1'}, 400, response_headers)
                 header1, encoded1 = image_data_url_1.split(",", 1)
                 image_bytes_1 = base64.b64decode(encoded1)
                 logging.info(f"Decoded image 1 size: {len(image_bytes_1)} bytes")
 
                 # Decode Image 2 (Optional)
-                image_data_url_2 = data.get('image_data_2') # Use .get() as it might be null
-                if image_data_url_2 and ';base64,' in image_data_url_2:
+                image_data_url_2 = data.get('image_data_2') # Use .get()
+                if image_data_url_2 and isinstance(image_data_url_2, str) and ';base64,' in image_data_url_2:
                     try:
                         header2, encoded2 = image_data_url_2.split(",", 1)
                         image_bytes_2 = base64.b64decode(encoded2)
                         logging.info(f"Decoded image 2 size: {len(image_bytes_2)} bytes")
                     except Exception as decode_error_2:
                         logging.error(f"Base64 Decode Error for image 2: {decode_error_2}")
-                        # Continue without image 2 if it fails to decode
-                        image_bytes_2 = None
+                        image_bytes_2 = None # Proceed without image 2
                 else:
-                    logging.info("No valid image_data_2 provided.")
+                    logging.info("No valid image_data_2 provided or found.")
+                    image_bytes_2 = None
 
             except Exception as decode_error_1:
                 logging.error(f"Base64 Decode Error for image 1: {decode_error_1}")
                 return ({'error': 'Failed to decode base64 image_data_1'}, 400, response_headers)
 
             # 2. Upload images to GCS
-            storage_client = None # Define here for broader scope if needed
             if image_bytes_1 and GCS_BUCKET_NAME:
                 try:
-                    storage_client = storage.Client() # Initialize only if needed
+                    storage_client = storage.Client()
                     bucket = storage_client.bucket(GCS_BUCKET_NAME)
 
                     # Upload Image 1
@@ -124,11 +124,11 @@ def handle_process_image(request):
                         blob2 = bucket.blob(filename_2)
                         logging.info(f"Uploading image 2 to gs://{GCS_BUCKET_NAME}/{filename_2}")
                         blob2.upload_from_string(image_bytes_2, content_type='image/jpeg')
-                        image_url_2 = blob2.public_url # URL for second image
+                        image_url_2 = blob2.public_url
                         logging.info(f"Image 2 uploaded successfully: {image_url_2}")
 
                 except Exception as err:
-                    gcs_error_1 = f"GCS Upload Error: {err}" # Report general GCS error
+                    gcs_error_1 = f"GCS Upload Error: {err}" # General GCS error
                     logging.exception(gcs_error_1)
                     # Reset URLs if upload failed partway
                     if not image_url_1: filename_1 = None
@@ -141,10 +141,9 @@ def handle_process_image(request):
             # 3. Call Gemini Vision API with one or two images
             if image_bytes_1 and gemini_configured:
                 try:
-                    logging.info("Calling Gemini API with available images...")
+                    logging.info("Calling Gemini API...")
                     model = genai.GenerativeModel('gemini-1.5-flash-latest')
 
-                    # Updated prompt for potentially two images
                     prompt = """Analyze the provided image(s). Image 1 is the primary view (likely book cover). 
                     Image 2, if provided, is a secondary view (likely barcode area or copyright/details page).
                     Identify the following bibliographic details, prioritizing Image 2 for ISBN, Publisher, and Year if available and clear, 
@@ -153,21 +152,21 @@ def handle_process_image(request):
                     If a field cannot be determined from the images, use null as its value. 
                     For "author", if multiple authors, join them with commas. For "release_date", provide YYYY if possible.
                     For "signature", return "Signed" if explicit textual evidence found, otherwise null. 
-                    Ensure the output is ONLY the JSON object.
+                    Ensure the output is ONLY the JSON object with no surrounding text or markdown.
                     """
 
                     # Prepare image parts
                     image_part_1 = {"mime_type": "image/jpeg", "data": image_bytes_1}
-                    content_parts = [prompt, image_part_1] # Always include prompt and image 1
+                    content_parts = [prompt, image_part_1]
 
                     if image_bytes_2:
                         image_part_2 = {"mime_type": "image/jpeg", "data": image_bytes_2}
-                        content_parts.append(image_part_2) # Add second image if present
-                        logging.info("Sending 2 images to Gemini.")
+                        content_parts.append(image_part_2)
+                        logging.info(f"Sending {len(content_parts)-1} images to Gemini.")
                     else:
-                        logging.info("Sending 1 image to Gemini.")
+                        logging.info(f"Sending {len(content_parts)-1} image to Gemini.")
 
-                    # Generate content
+
                     response = model.generate_content(content_parts)
                     logging.info("Gemini response received.")
 
@@ -184,18 +183,19 @@ def handle_process_image(request):
                         else:
                              raise ValueError("No valid JSON object found in response text.")
                     except (json.JSONDecodeError, AttributeError, ValueError) as json_err:
-                        gemini_error = f"Failed to parse JSON: {json_err} | Response: {response.text[:500]}"
+                        # Include response text in error for debugging
+                        gemini_error = f"Failed to parse JSON from Gemini response: {json_err} | Response text snippet: {getattr(response, 'text', 'N/A')[:500]}"
                         logging.error(gemini_error)
-                    except Exception as inner_err:
+                    except Exception as inner_err: # Catch other potential errors during parsing
                          gemini_error = f"Error processing Gemini response text: {inner_err}"
                          logging.exception(gemini_error)
 
-                    # Check for safety/block reasons
+                    # Check for safety/block reasons after trying to parse
                     if hasattr(response, 'prompt_feedback') and response.prompt_feedback.block_reason:
-                        block_reason = f"Gemini request blocked: {response.prompt_feedback.block_reason}"
+                        block_reason = f"Gemini request blocked due to: {response.prompt_feedback.block_reason}"
                         logging.error(block_reason)
                         gemini_error = f"{gemini_error or ''} | {block_reason}".strip(" | ")
-                        parsed_fields_dict = None
+                        parsed_fields_dict = None # Ensure null if blocked
 
                 except Exception as gemini_api_error:
                     gemini_error = f"Gemini API Call Failed: {gemini_api_error}"
@@ -203,12 +203,11 @@ def handle_process_image(request):
                     parsed_fields_dict = None
 
             elif not gemini_configured:
-                gemini_error = "Gemini API Key not configured."
+                gemini_error = "Gemini API Key not configured or config failed."
                 logging.error(gemini_error)
-            else:
+            else: # Implies image_bytes_1 was None
                  gemini_error = "Skipping Gemini: Image 1 decoding failed."
                  logging.warning(gemini_error)
-
 
             # 4. Prepare final response data
             final_parsed_fields = { # Default structure
@@ -218,18 +217,20 @@ def handle_process_image(request):
             if isinstance(parsed_fields_dict, dict):
                  # Update with fields actually found by Gemini
                  for key in final_parsed_fields.keys():
-                     final_parsed_fields[key] = parsed_fields_dict.get(key)
+                     # Only update if key exists in Gemini response, otherwise keep None default
+                     if key in parsed_fields_dict:
+                          final_parsed_fields[key] = parsed_fields_dict.get(key)
 
             response_data = {
                 "message": "Image(s) processed using Gemini.",
                 "image_url": image_url_1, # Primary image URL (cover/first shot)
-                "image_url_2": image_url_2, # Secondary image URL (details/barcode, if taken)
-                "gcs_error": gcs_error_1, # Report primary GCS error if any
+                "image_url_2": image_url_2, # Secondary image URL (if taken)
+                "gcs_error": gcs_error_1, # Report primary GCS error
                 "gemini_error": gemini_error,
                 "parsed_fields": final_parsed_fields
             }
             logging.info("Sending final response")
-            return (response_data, 200, response_headers)
+            return (response_data, 200, response_headers) # Return data, status, CORS headers
 
         # Catch-all for unexpected errors
         except Exception as e:
