@@ -33,7 +33,7 @@ const notesInput = document.getElementById('notes');
 const publisherInput = document.getElementById('publisher');
 const releaseDateInput = document.getElementById('release_date');
 const mediaInput = document.getElementById('media');
-const locationInput = document.getElementById('location');
+const locationInput = document.getElementById('location'); // Location input
 const costInput = document.getElementById('cost');
 const sourceInput = document.getElementById('source');
 const imageUrlInput = document.getElementById('image_url'); // Will store GCS URL
@@ -70,17 +70,12 @@ if (imageUploadInput) {
             filePreviewDiv.textContent = 'No files selected.';
             return;
         }
-
         console.log(`Selected ${files.length} file(s).`);
-
-        // Process up to two files
         const maxFiles = Math.min(files.length, 2);
         let filesProcessed = 0;
-
         for (let i = 0; i < maxFiles; i++) {
             const file = files[i];
             const reader = new FileReader();
-
             reader.onload = (e) => {
                 if (i === 0) {
                     imageBase64Data.image_data_1 = e.target.result;
@@ -92,143 +87,102 @@ if (imageUploadInput) {
                      filePreviewDiv.innerHTML += `<div>File 2: ${file.name} (Details/Barcode)</div>`;
                 }
                 filesProcessed++;
-                if (filesProcessed === maxFiles) {
-                    console.log("Finished processing selected files.");
-                }
+                if (filesProcessed === maxFiles) console.log("Finished processing selected files.");
             };
-
             reader.onerror = (e) => {
                 console.error("Error reading file:", file.name, e);
                 filePreviewDiv.innerHTML += `<div style="color: red;">Error reading ${file.name}</div>`;
                  filesProcessed++;
-                 if (filesProcessed === maxFiles) {
-                     console.log("Finished processing selected files (with errors).");
-                 }
+                 if (filesProcessed === maxFiles) console.log("Finished processing selected files (with errors).");
             };
-
             reader.readAsDataURL(file); // Read file as base64 Data URL
         }
          if (files.length > 2) {
              filePreviewDiv.innerHTML += `<div style="color: orange;">Note: Only the first two selected images will be processed.</div>`;
          }
     });
-} else {
-    console.error("Image Upload Input not found.");
-}
+} else { console.error("Image Upload Input not found."); }
 
 // --- Paste Data & Populate Form Logic ---
 if (populateButton) {
     populateButton.addEventListener('click', () => {
         console.log("Populate From Text button clicked.");
         const pastedText = pastedDataTextArea.value.trim();
-        if (!pastedText) {
-            alert("Please paste data from BVS GPT into the text area first.");
-            return;
-        }
+        if (!pastedText) { alert("Please paste data from BVS GPT into the text area first."); return; }
 
-        // Expected header order from BVS GPT (Signature removed, Volume added, avg_price last)
+        // Expected header order from BVS GPT (9 fields)
         // title,author,publisher,release_date,language,edition,isbn,volume,avg_price
-        const expectedHeaders = ['title', 'author', 'publisher', 'release_date', 'language', 'edition', 'isbn', 'volume', 'price']; // Use 'price' to match form ID
+        const expectedHeaders = ['title', 'author', 'publisher', 'release_date', 'language', 'edition', 'isbn', 'volume', 'price'];
         const numExpectedFields = expectedHeaders.length;
 
         try {
-            // Attempt to parse the pasted text as a single CSV line
             console.log("Parsing pasted text:", pastedText);
-            // Remove potential code fences and trim whitespace
             const csvLine = pastedText.replace(/^```csv\s*|\s*```$/g, '').trim();
-
-            // Simple CSV split respecting double quotes (basic implementation)
-            // This regex splits by comma, but ignores commas inside double quotes
-            // It assumes quotes are properly balanced and escaped double quotes ("") are not used inside fields.
-            const values = [];
-            let currentVal = '';
-            let inQuotes = false;
+            // Basic CSV parsing respecting quotes
+            const values = []; let currentVal = ''; let inQuotes = false;
             for (let i = 0; i < csvLine.length; i++) {
                 const char = csvLine[i];
-                if (char === '"' && (i === 0 || csvLine[i-1] !== '\\')) { // Handle quote, ignore escaped
-                    inQuotes = !inQuotes;
-                } else if (char === ',' && !inQuotes) {
-                    values.push(currentVal.trim());
-                    currentVal = '';
-                } else {
-                    currentVal += char;
-                }
+                if (char === '"' && (i === 0 || csvLine[i-1] !== '\\')) { inQuotes = !inQuotes; }
+                else if (char === ',' && !inQuotes) { values.push(currentVal.trim()); currentVal = ''; }
+                else { currentVal += char; }
             }
-            values.push(currentVal.trim()); // Add the last value
-
-            // Remove surrounding quotes from each value
-            const cleanedValues = values.map(v => v.replace(/^"|"$/g, ''));
-
+            values.push(currentVal.trim());
+            const cleanedValues = values.map(v => v.replace(/^"|"$/g, '')); // Remove surrounding quotes
             console.log("Parsed values:", cleanedValues);
 
-            if (cleanedValues.length !== numExpectedFields) {
-                 throw new Error(`Expected ${numExpectedFields} fields based on BVS format, but found ${cleanedValues.length}. Check pasted data format.`);
-            }
+            if (cleanedValues.length !== numExpectedFields) { throw new Error(`Expected ${numExpectedFields} fields, found ${cleanedValues.length}. Check pasted data.`); }
 
-            // Populate form fields based on index
-            titleInput.value = cleanedValues[0] || '';
-            authorInput.value = cleanedValues[1] || '';
-            publisherInput.value = cleanedValues[2] || '';
-            releaseDateInput.value = cleanedValues[3] || ''; // Expecting YYYY
-            languageInput.value = cleanedValues[4] || 'English';
-            editionInput.value = cleanedValues[5] || '';
-            isbnInput.value = cleanedValues[6] || '';
-            volumeInput.value = cleanedValues[7] || ''; // Populate new volume field
-            priceInput.value = cleanedValues[8] || '50'; // Populate price from avg_price
+            // Populate form fields
+            titleInput.value = cleanedValues[0] || ''; authorInput.value = cleanedValues[1] || '';
+            publisherInput.value = cleanedValues[2] || ''; releaseDateInput.value = cleanedValues[3] || '';
+            languageInput.value = cleanedValues[4] || 'English'; editionInput.value = cleanedValues[5] || '';
+            isbnInput.value = cleanedValues[6] || ''; volumeInput.value = cleanedValues[7] || '';
+            priceInput.value = cleanedValues[8] || '50'; // Use avg_price from BVS
 
-            // Reset other fields to defaults or clear them
-            conditionSelect.value = '2'; // Default Very Good
-            conditionTextInput.value = '';
-            qtyInput.value = '1';
-            notesInput.value = "NO WRITING OR MARKING IN TEXT A CLEAN AND SOLID BOOK";
-            mediaInput.value = '';
-            // Keep sticky location populated if it exists
-            const lastLocation = sessionStorage.getItem('lastLocation');
-            locationInput.value = lastLocation || '';
-            costInput.value = '';
-            sourceInput.value = '';
-            signedFlagCheckbox.checked = false; // Reset signed status, user must check manually
-            imageUrlInput.value = ''; // Clear image URL until uploaded
+            // Reset other fields
+            conditionSelect.value = '2'; conditionTextInput.value = ''; qtyInput.value = '1';
+            notesInput.value = "NO WRITING OR MARKING IN TEXT A CLEAN AND SOLID BOOK"; mediaInput.value = '';
+            const lastLocation = sessionStorage.getItem('lastLocation'); locationInput.value = lastLocation || '';
+            costInput.value = ''; sourceInput.value = ''; signedFlagCheckbox.checked = false; imageUrlInput.value = '';
 
             console.log("Form fields populated from pasted data.");
             alert("Form populated! Please upload the corresponding image(s) now if you haven't already.");
 
-        } catch (error) {
-            console.error("Error parsing pasted data:", error);
-            alert(`Error parsing pasted data: ${error.message}. Please ensure the data is a single CSV line with ${numExpectedFields} fields, correctly quoted.`);
-        }
+        } catch (error) { console.error("Error parsing pasted data:", error); alert(`Error parsing pasted data: ${error.message}. Please ensure data is a single CSV line with ${numExpectedFields} fields, correctly quoted.`); }
     });
-} else {
-    console.error("Populate From Text Button not found.");
-}
+} else { console.error("Populate From Text Button not found."); }
 
 
 // --- Function to update the displayed list of books ---
-function renderSessionBooks() { /* Keep existing function */ if (!booksUl || !bookCountSpan) { console.error("Book list UL/Span not found."); return; } booksUl.innerHTML = ''; bookCountSpan.innerText = sessionBooks.length; if (sessionBooks.length === 0) { booksUl.innerHTML = '<li>No books added yet.</li>'; return; } sessionBooks.forEach((book, index) => { const listItem = document.createElement('li'); listItem.textContent = `[${index + 1}] ${book.sku}: ${book.title || 'N/A'} by ${book.author || 'N/A'} - Price: ${book.price || 'N/A'}`; booksUl.appendChild(listItem); }); }
+function renderSessionBooks() { if (!booksUl || !bookCountSpan) { console.error("Book list UL/Span not found."); return; } booksUl.innerHTML = ''; bookCountSpan.innerText = sessionBooks.length; if (sessionBooks.length === 0) { booksUl.innerHTML = '<li>No books added yet.</li>'; return; } sessionBooks.forEach((book, index) => { const listItem = document.createElement('li'); listItem.textContent = `[${index + 1}] ${book.sku}: ${book.title || 'N/A'} by ${book.author || 'N/A'} - Price: ${book.price || 'N/A'}`; booksUl.appendChild(listItem); }); }
 
 // --- Add Book Button Logic (Hybrid V3) ---
 if (addBookButton) {
     addBookButton.addEventListener('click', () => {
         console.log("Add Book button clicked.");
-
-        // Check if image file(s) have been selected and processed
-        if (!imageBase64Data.image_data_1) {
-            alert("Please upload the primary book image first using the 'Upload Image(s)' button.");
-            return;
+        // Generate SKU just before adding
+        const nextSku = generateNextSku();
+        if (!nextSku) {
+            alert("Could not generate SKU. Please ensure SKU pattern is initialized.");
+            return; // Stop if SKU generation failed
         }
+        skuInput.value = nextSku; // Populate SKU field now
 
-        // Read values from form
-        const sku = skuInput.value.trim(); const title = titleInput.value.trim(); const author = authorInput.value.trim();
+        if (!imageBase64Data.image_data_1) { alert("Please upload the primary book image first."); return; }
+
+        // Read values from form (SKU already set)
+        const sku = skuInput.value.trim(); // Read the generated SKU
+        const title = titleInput.value.trim(); const author = authorInput.value.trim();
         const isbn = isbnInput.value.trim(); const condition = conditionSelect.value; const condText = conditionTextInput.value.trim();
         const price = priceInput.value.trim(); const qty = qtyInput.value; const notes = notesInput.value.trim();
         const publisher = publisherInput.value.trim(); const releaseDate = releaseDateInput.value.trim(); const media = mediaInput.value.trim();
         const location = locationInput.value.trim(); const cost = costInput.value.trim(); const source = sourceInput.value.trim();
-        // Image URL will come from backend response; use stored base64 for sending
         const isSigned = signedFlagCheckbox.checked; const edition = editionInput.value.trim(); const language = languageInput.value.trim();
-        const volume = volumeInput.value.trim(); // Read volume
+        const volume = volumeInput.value.trim();
 
         // Validation
-        if (!sku) { alert("SKU required."); return; } if (!price) { alert("Price required."); return; }
+        if (!sku) { alert("SKU is missing."); return; } // Should not happen now
+        if (!price) { alert("Price required."); return; }
         const qtyInt = parseInt(qty, 10); if (isNaN(qtyInt) || qtyInt < 1) { alert("Qty must be >= 1."); return; }
         if (!title && !isbn) { alert("Title or ISBN required."); return; }
 
@@ -238,30 +192,26 @@ if (addBookButton) {
             image_data_2: imageBase64Data.image_data_2 // Send second image if loaded
         };
 
-        // --- Send Image Data to Backend for GCS Upload ---
+        // Send Image Data to Backend for GCS Upload
         console.log("Sending image data to backend for GCS upload...");
-        const backendUrl = 'https://us-central1-aob-scanner.cloudfunctions.net/book-scanner-process-image'; // Use the existing endpoint (needs simplification later)
+        const backendUrl = 'https://us-central1-aob-scanner.cloudfunctions.net/book-scanner-process-image'; // Simplified backend endpoint
         fetch(backendUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
         })
-        .then(response => { /* Keep existing response handling */ if (!response.ok) { return response.json().then(errData => { throw new Error(`HTTP error! status: ${response.status}, message: ${errData.error || 'Unknown backend error'}`); }).catch(() => { throw new Error(`HTTP error! status: ${response.status}`); }); } return response.json(); })
+        .then(response => { if (!response.ok) { return response.json().then(errData => { throw new Error(`HTTP error! status: ${response.status}, message: ${errData.error || 'Unknown backend error'}`); }).catch(() => { throw new Error(`HTTP error! status: ${response.status}`); }); } return response.json(); })
         .then(uploadData => {
             console.log("Backend response (GCS URLs):", uploadData);
-            if (uploadData && uploadData.image_url) {
-                // Successfully uploaded, now create the bookData object with GCS URL(s)
+            if (uploadData && uploadData.image_url) { // Check if primary URL exists
                 const gcsImageUrl1 = uploadData.image_url;
                 const gcsImageUrl2 = uploadData.image_url_2; // Get URL for image 2 if returned
 
+                // Create book data object using form data + GCS URLs
                 const bookData = {
                     sku: sku, location: location, cost: cost ? parseFloat(cost) : null, source: source,
                     isbn: isbn, title: title, author: author, publisher: publisher, release_date: releaseDate,
-                    image: gcsImageUrl1, // Use GCS URL for image 1
-                    image_2: gcsImageUrl2 || "", // Use GCS URL for image 2
-                    media: media, price: price, condition: parseInt(condition, 10), notes: notes, qty: qtyInt,
-                    cond_text: condText, edition: edition, signature: isSigned ? "Signed" : "", language: language,
-                    volume: volume // Add volume
+                    image: gcsImageUrl1, image_2: gcsImageUrl2 || "", media: media, price: price,
+                    condition: parseInt(condition, 10), notes: notes, qty: qtyInt, cond_text: condText,
+                    edition: edition, signature: isSigned ? "Signed" : "", language: language, volume: volume
                 };
 
                 sessionBooks.push(bookData);
@@ -282,10 +232,13 @@ if (addBookButton) {
                 imageBase64Data.image_data_2 = null;
                 lastBackendResponseData = null; // Clear stored response
 
-                skuInput.value = ''; titleInput.value = ''; authorInput.value = ''; isbnInput.value = '';
-                publisherInput.value = ''; releaseDateInput.value = ''; editionInput.value = ''; volumeInput.value = ''; // Clear volume
+                // Clear specific fields
+                skuInput.value = ''; // Clear SKU for next auto-generation
+                titleInput.value = ''; authorInput.value = ''; isbnInput.value = '';
+                publisherInput.value = ''; releaseDateInput.value = ''; editionInput.value = ''; volumeInput.value = '';
                 conditionTextInput.value = ''; mediaInput.value = ''; costInput.value = ''; sourceInput.value = '';
                 imageUrlInput.value = ''; signedFlagCheckbox.checked = false;
+                // Reset fields to defaults
                 conditionSelect.value = '2'; priceInput.value = '50';
                 notesInput.value = "NO WRITING OR MARKING IN TEXT A CLEAN AND SOLID BOOK";
                 qtyInput.value = '1'; languageInput.value = 'English';
@@ -295,7 +248,6 @@ if (addBookButton) {
                 // --- End Form Clear/Reset ---
 
             } else {
-                // Handle case where backend upload failed or didn't return URL
                 console.error("Backend did not return expected image URL(s).", uploadData);
                 alert("Error: Failed to get image URL from backend after upload. Book not added.");
             }
@@ -320,7 +272,9 @@ if (btnMediaDVD) { btnMediaDVD.addEventListener('click', () => setInputValue('me
 
 // --- CSV Export Logic ---
 function escapeCsvCell(value) { if (value == null) { return ''; } const stringValue = String(value); if (stringValue.includes(',') || stringValue.includes('\n') || stringValue.includes('"')) { return `"${stringValue.replace(/"/g, '""')}"`; } return stringValue; }
-function exportBooksToCsv() { if (sessionBooks.length === 0) { alert("No books added..."); return; } console.log("Generating CSV...");
+function exportBooksToCsv() {
+    if (sessionBooks.length === 0) { alert("No books added..."); return; }
+    console.log("Generating CSV...");
     // Updated headers for V3 Hybrid (includes volume, image_2)
     const headers = [
         'sku', 'location', 'cost', 'source', 'isbn', 'title', 'author',
@@ -333,7 +287,47 @@ function exportBooksToCsv() { if (sessionBooks.length === 0) { alert("No books a
     const csvContent = [headerRow, ...dataRows].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement("a");
-    if (link.download !== undefined) { const url = URL.createObjectURL(blob); const timestamp = new Date().toISOString().replace(/[:\-T.]/g, '').substring(0, 14); link.setAttribute("href", url); link.setAttribute("download", `aob_export_${timestamp}.csv`); link.style.visibility = 'hidden'; document.body.appendChild(link); link.click(); document.body.removeChild(link); URL.revokeObjectURL(url); console.log("CSV download initiated."); } else { alert("CSV download not supported..."); } }
+
+    // *** FILENAME GENERATION (Handles articles) ***
+    let filename = 'aob_export.csv'; // Default filename
+    if (sessionBooks.length > 0) {
+        try {
+            const firstBookTitle = sessionBooks[0].title || ''; // Handle null title
+            let descriptiveWord = 'Export'; // Default fallback
+            const words = firstBookTitle.trim().split(/\s+/); // Split by whitespace
+
+            if (words.length > 0 && words[0] !== '') { // Check if title is not empty/just spaces
+                const firstWordLower = words[0].toLowerCase();
+                // If title starts with common article and has more than one word, use the second word
+                if ((firstWordLower === 'the' || firstWordLower === 'a' || firstWordLower === 'an') && words.length > 1) {
+                    descriptiveWord = words[1]; // Use second word
+                } else {
+                    descriptiveWord = words[0]; // Use first word
+                }
+            }
+            // Sanitize the chosen word
+            let sanitizedWord = descriptiveWord.replace(/[^a-zA-Z0-9]/g, '').substring(0, 15); // Remove non-alphanumeric, limit length
+            if (!sanitizedWord) { sanitizedWord = 'Export'; } // Ensure fallback if word was only symbols etc.
+
+            // Get date part YYYYMMDD
+            const dateStamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+            filename = `aob_export_${sanitizedWord}_${dateStamp}.csv`;
+            console.log(`Generated filename: ${filename}`);
+        } catch (e) {
+            console.error("Error generating filename from title:", e);
+            // Use a timestamp filename as fallback on error
+            const timestamp = new Date().toISOString().replace(/[:\-T.]/g, '').substring(0, 14);
+            filename = `aob_export_${timestamp}.csv`;
+        }
+    } else {
+        // Fallback if no books in session
+        const timestamp = new Date().toISOString().replace(/[:\-T.]/g, '').substring(0, 14);
+        filename = `aob_export_${timestamp}.csv`;
+    }
+    // *** END FILENAME GENERATION ***
+
+    if (link.download !== undefined) { const url = URL.createObjectURL(blob); link.setAttribute("href", url); link.setAttribute("download", filename); link.style.visibility = 'hidden'; document.body.appendChild(link); link.click(); document.body.removeChild(link); URL.revokeObjectURL(url); console.log("CSV download initiated."); } else { alert("CSV download not supported..."); }
+}
 if (exportCsvButton) { exportCsvButton.addEventListener('click', exportBooksToCsv); }
 else { console.error("Export CSV button not found."); }
 // --- End CSV Export Logic ---
@@ -342,7 +336,7 @@ else { console.error("Export CSV button not found."); }
 // --- Initialize Page ---
 initializeSku(); // Keep SKU initialization
 renderSessionBooks(); // Render empty list
-console.log("--- Script loaded (Hybrid V3) ---");
+console.log("--- Script loaded (Hybrid V3 - Filename Article Skip) ---");
 // No camera start needed
 
 
