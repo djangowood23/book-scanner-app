@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Book Scanner V2</title> <link rel="stylesheet" href="style.css">
+    <title>Book Scanner V3 (Hybrid)</title> <link rel="stylesheet" href="style.css">
     <style>
         /* Basic styling for helper buttons/links */
         .field-helpers button, .field-helpers span { margin-left: 5px; cursor: pointer; color: blue; text-decoration: underline; background: none; border: none; padding: 0; font-size: 0.9em; }
@@ -16,36 +16,48 @@
         #bookDetailsForm textarea { width: calc(90% - 160px); /* Adjust width considering label */ box-sizing: border-box; }
         #bookDetailsForm textarea { vertical-align: top; }
         #bookDetailsForm input[type="checkbox"] { width: auto; margin-right: 5px;}
+        #bookDetailsForm input[type="file"] { width: calc(90% - 160px); } /* Style file input */
         #bookDetailsForm input[readonly] { background-color: #eee; }
-         /* Styling for capture buttons */
-         #captureButton { padding: 10px; font-size: 1.1em; margin: 5px; display: block; } /* Style single button */
+        #pasteSection { margin-top: 15px; margin-bottom: 15px; padding: 10px; border: 1px solid #ccc; border-radius: 5px; background-color: #f9f9f9; }
+        #pasteSection label { display: block; margin-bottom: 5px; font-weight: bold;}
+        #pasteSection textarea { width: 98%; min-height: 80px; margin-bottom: 10px;}
+        #pasteSection button { padding: 8px 15px; }
+        #imageUploadSection label { font-weight: bold; margin-right: 10px;}
+
         /* Responsive adjustments */
         @media (max-width: 600px) {
             #bookDetailsForm label { min-width: 100px; }
              #bookDetailsForm input[type="text"],
              #bookDetailsForm input[type="number"],
              #bookDetailsForm select,
-             #bookDetailsForm textarea { width: calc(100% - 110px); }
+             #bookDetailsForm textarea,
+             #bookDetailsForm input[type="file"] { width: calc(100% - 110px); }
              /* Ensure width override applies */
              #bookDetailsForm input[style*="width"],
              #bookDetailsForm textarea[style*="width"] { width: calc(100% - 110px) !important; }
+             #pasteSection textarea { width: 95%; }
         }
     </style>
 </head>
 <body>
 
-    <h1>Book Scanner Camera (V2 Dev)</h1> <video id="videoElement" autoplay playsinline></video>
+    <h1>Book Scanner (V3 Hybrid - BVS Paste)</h1>
 
-    <button type="button" id="captureButton">Capture Photo</button>
-
-    <canvas id="canvasElement" style="display:none;"></canvas>
-
-    <h2>Snapshot:</h2>
-    <img id="snapshot" src="" alt="Captured image"/>
+    <div id="pasteSection">
+        <label for="pastedData">Paste Data from BVS GPT:</label>
+        <textarea id="pastedData" rows="6" placeholder="Paste the formatted output (e.g., CSV line or Key: Value pairs) from your Book Value Snap GPT here..."></textarea>
+        <button type="button" id="populateFromTextButton">Paste Data & Populate Form</button>
+    </div>
 
     <hr>
     <h2>Book Details</h2>
     <div id="bookDetailsForm">
+        <div id="imageUploadSection">
+             <label for="imageUpload">Upload Image(s):</label>
+             <input type="file" id="imageUpload" name="imageUpload" accept="image/jpeg, image/png, image/webp" multiple>
+             <div id="filePreview" style="margin-top: 5px; font-size: 0.9em;"></div> </div>
+         <hr style="margin: 15px 0;">
+
         <div>
             <label for="sku">SKU:</label>
             <input type="text" id="sku" name="sku" maxlength="24">
@@ -69,7 +81,11 @@
                 <option value="1">Used: Like New</option>
                 <option value="2" selected>Used: Very Good</option> <option value="3">Used: Good</option>
                 <option value="4">Used: Acceptable</option>
-                <option value="5">Collectible: Like New</option> <option value="6">Collectible: Very Good</option> <option value="7">Collectible: Good</option> <option value="8">Collectible: Acceptable</option> </select>
+                <option value="5">Collectible: Like New</option>
+                <option value="6">Collectible: Very Good</option>
+                <option value="7">Collectible: Good</option>
+                <option value="8">Collectible: Acceptable</option>
+            </select>
         </div>
         <div>
             <label for="condition_text">Condition Notes:</label>
@@ -98,6 +114,9 @@
          <div> <label for="language">Language:</label>
             <input type="text" id="language" name="language" value="English">
         </div>
+         <div> <label for="volume">Volume:</label>
+            <input type="text" id="volume" name="volume">
+        </div>
         <div> <label for="media">Media:</label>
             <input type="text" id="media" name="media" placeholder="e.g., Paperback">
             <span class="field-helpers">
@@ -112,8 +131,7 @@
             <textarea id="notes" name="notes" rows="3">NO WRITING OR MARKING IN TEXT A CLEAN AND SOLID BOOK</textarea>
         </div>
          <div>
-            <label for="release_date">Release Date:</label>
-            <input type="text" id="release_date" name="release_date" placeholder="YYYY-MM-DD">
+            <label for="release_date">Release Date (Year):</label> <input type="text" id="release_date" name="release_date" placeholder="YYYY">
         </div>
          <div>
             <label for="location">Location (Shelf):</label>
@@ -128,8 +146,7 @@
             <input type="text" id="source" name="source" maxlength="32">
         </div>
          <div>
-            <label for="image_url">Image URL:</label>
-            <input type="text" id="image_url" name="image_url" readonly>
+            <label for="image_url">Image URL (from GCS):</label> <input type="text" id="image_url" name="image_url" readonly>
          </div>
 
         <hr>
@@ -148,3 +165,4 @@
 
 </body>
 </html>
+

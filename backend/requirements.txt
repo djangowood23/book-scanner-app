@@ -1,6 +1,6 @@
+# Dependencies needed only for GCS upload and basic function execution
 functions-framework>=3.0
 google-cloud-storage
-google-cloud-vision
 python-dotenv
-Pillow
-google-generativeai
+Pillow # Keep Pillow, might be useful for image handling later
+

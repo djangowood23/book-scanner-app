@@ -3,16 +3,15 @@ import logging
 import base64
 import os
 import uuid
-from google.cloud import storage
-import google.generativeai as genai
-import json
+from google.cloud import storage # Only need storage client now
 from dotenv import load_dotenv
-# Removed requests and re as they are not needed in this simplified version
+# Removed genai, json, requests, re
 
 logging.basicConfig(level=logging.INFO)
-load_dotenv()
+load_dotenv() # Load .env file for local testing
 
 # --- Define CORS Headers ---
+# Still needed for requests from the frontend
 CORS_HEADERS = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -21,173 +20,143 @@ CORS_HEADERS = {
 }
 
 # --- Load Environment Variables ---
+# Only need GCS bucket name now for this function's core logic
 GCS_BUCKET_NAME = os.environ.get('GCS_BUCKET_NAME')
-GOOGLE_CLOUD_PROJECT = os.environ.get('GOOGLE_CLOUD_PROJECT')
-GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
-
-# --- Configure Gemini ---
-gemini_configured = False
-if not GEMINI_API_KEY:
-    logging.warning("GEMINI_API_KEY environment variable not set.")
-else:
-    try:
-        genai.configure(api_key=GEMINI_API_KEY)
-        gemini_configured = True
-        logging.info("Gemini API configured successfully.")
-    except Exception as config_err:
-         logging.error(f"Failed to configure Gemini API: {config_err}")
+# GOOGLE_CLOUD_PROJECT = os.environ.get('GOOGLE_CLOUD_PROJECT') # Not explicitly used, but good practice
+# GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY') # No longer needed here
+# GOOGLE_BOOKS_API_KEY = os.environ.get('GOOGLE_BOOKS_API_KEY') # No longer needed here
 
 if not GCS_BUCKET_NAME:
     logging.warning("GCS_BUCKET_NAME environment variable not set.")
 
-
-# Removed lookup_book_by_isbn function definition for this simplified version
-
+# --- Removed Gemini Configuration ---
+# --- Removed Google Books API Lookup Function ---
 
 @functions_framework.http
 def handle_process_image(request):
-    """Handles OPTIONS/POST: Decodes single image, uploads, calls Gemini."""
+    """
+    Handles OPTIONS/POST: Decodes image(s) from frontend file upload,
+    uploads them to GCS, and returns the GCS URLs.
+    Does NOT call any AI models.
+    """
 
     # --- Handle OPTIONS preflight request ---
     if request.method == 'OPTIONS':
-        logging.info("Handling OPTIONS request (V2-Simple)")
+        logging.info("Handling OPTIONS request (Upload Only)")
         return ('', 204, CORS_HEADERS)
 
     # --- Handle POST request ---
     elif request.method == 'POST':
-        logging.info("Handling POST request (V2-Simple)")
+        logging.info("Handling POST request (Upload Only)")
         # Initialize variables
-        image_bytes = None
-        image_url = None
-        filename = None
+        image_bytes_1 = None
+        image_bytes_2 = None
+        image_url_1 = None # URL of primary image
+        image_url_2 = None # URL of secondary image
+        filename_1 = None
+        filename_2 = None
         gcs_error = None
-        gemini_error = None
-        parsed_fields_dict = None
 
         response_headers = CORS_HEADERS.copy()
         response_headers['Content-Type'] = 'application/json'
 
         try:
-            # 1. Decode Base64 Image (Only image_data_1)
+            # 1. Decode Base64 Images from Payload
             try:
                 data = request.get_json(silent=True)
-                if not data or 'image_data_1' not in data: # Check only for image_data_1
+                # Expect image_data_1, image_data_2 (optional) from file upload
+                if not data or 'image_data_1' not in data:
                     logging.error("Missing or invalid JSON/image_data_1")
                     return ({'error': 'Missing image_data_1'}, 400, response_headers)
 
+                # Decode Image 1
                 image_data_url_1 = data['image_data_1']
                 if ';base64,' not in image_data_url_1:
-                     logging.error(f"Invalid image data format")
-                     return ({'error': 'Invalid image data format'}, 400, response_headers)
+                     logging.error(f"Invalid image data format for image 1")
+                     return ({'error': 'Invalid image data format for image 1'}, 400, response_headers)
                 header1, encoded1 = image_data_url_1.split(",", 1)
-                image_bytes = base64.b64decode(encoded1) # Store as image_bytes
-                logging.info(f"Decoded image size: {len(image_bytes)} bytes")
+                image_bytes_1 = base64.b64decode(encoded1)
+                logging.info(f"Decoded image 1 size: {len(image_bytes_1)} bytes")
 
-            except Exception as decode_error:
-                logging.error(f"Base64 Decode Error: {decode_error}")
-                return ({'error': 'Failed to decode base64 image data'}, 400, response_headers)
+                # Decode Image 2 (Optional)
+                image_data_url_2 = data.get('image_data_2')
+                if image_data_url_2 and isinstance(image_data_url_2, str) and ';base64,' in image_data_url_2:
+                    try:
+                        header2, encoded2 = image_data_url_2.split(",", 1)
+                        image_bytes_2 = base64.b64decode(encoded2)
+                        logging.info(f"Decoded image 2 size: {len(image_bytes_2)} bytes")
+                    except Exception as decode_error_2:
+                        logging.error(f"Base64 Decode Error for image 2: {decode_error_2}")
+                        image_bytes_2 = None
+                else:
+                    logging.info("No valid image_data_2 provided.")
+                    image_bytes_2 = None
 
-            # 2. Upload single image to GCS
-            if image_bytes and GCS_BUCKET_NAME:
+            except Exception as decode_error_1:
+                logging.error(f"Base64 Decode Error for image 1: {decode_error_1}")
+                return ({'error': 'Failed to decode base64 image_data_1'}, 400, response_headers)
+
+            # 2. Upload images to GCS
+            if image_bytes_1 and GCS_BUCKET_NAME:
                 try:
                     storage_client = storage.Client()
                     bucket = storage_client.bucket(GCS_BUCKET_NAME)
-                    # Use simpler filename now
-                    filename = f"book_covers/{uuid.uuid4()}.jpg"
-                    blob = bucket.blob(filename)
-                    logging.info(f"Uploading image to gs://{GCS_BUCKET_NAME}/{filename}")
-                    blob.upload_from_string(image_bytes, content_type='image/jpeg')
-                    image_url = blob.public_url # URL of the uploaded image
-                    logging.info(f"Image uploaded successfully: {image_url}")
+
+                    # Upload Image 1
+                    filename_1 = f"book_covers/{uuid.uuid4()}_img1.jpg" # Keep naming convention
+                    blob1 = bucket.blob(filename_1)
+                    logging.info(f"Uploading image 1 to gs://{GCS_BUCKET_NAME}/{filename_1}")
+                    blob1.upload_from_string(image_bytes_1, content_type='image/jpeg') # Assume JPEG for now
+                    image_url_1 = blob1.public_url
+                    logging.info(f"Image 1 uploaded successfully: {image_url_1}")
+
+                    # Upload Image 2 if it exists
+                    if image_bytes_2:
+                        filename_2 = f"book_covers/{uuid.uuid4()}_img2.jpg"
+                        blob2 = bucket.blob(filename_2)
+                        logging.info(f"Uploading image 2 to gs://{GCS_BUCKET_NAME}/{filename_2}")
+                        blob2.upload_from_string(image_bytes_2, content_type='image/jpeg') # Assume JPEG
+                        image_url_2 = blob2.public_url
+                        logging.info(f"Image 2 uploaded successfully: {image_url_2}")
+
                 except Exception as err:
                     gcs_error = f"GCS Upload Error: {err}"
                     logging.exception(gcs_error)
-                    # If upload fails, image_url remains None, but we still try Gemini with bytes
+                    # Reset URLs if upload failed partway
+                    if not image_url_1: filename_1 = None
+                    if not image_url_2: filename_2 = None
             elif not GCS_BUCKET_NAME:
                  gcs_error = "GCS Bucket name not configured."
                  logging.error(gcs_error)
+            elif not image_bytes_1:
+                 gcs_error = "Cannot upload, image 1 data missing."
+                 logging.error(gcs_error)
 
 
-            # 3. Call Gemini Vision API with single image
-            if image_bytes and gemini_configured:
-                try:
-                    logging.info("Calling Gemini API (single image)...")
-                    model = genai.GenerativeModel('gemini-1.5-flash-latest')
+            # --- Removed Gemini API Call ---
 
-                    # Refined prompt for single image, requesting price estimate, stricter on null
-                    prompt = """You are an expert librarian and rare book cataloger analyzing the provided image of a book cover, barcode area, or copyright page. 
-                    Extract the following bibliographic details as accurately as possible and return ONLY a single valid JSON object containing these exact keys: 
-                    "title", "author", "isbn", "publisher", "release_date", "language", "edition", "signature", "volume", "price".
-
-                    Specific instructions:
-                    - Look carefully for ISBN (10 or 13 digits), possibly prefixed "ISBN". Return numbers only, no hyphens/spaces if possible.
-                    - For release_date, look for a copyright year (e.g., ©2005) or publication date. Return just the year (YYYY) if possible.
-                    - For signature, return "Signed" only if clear textual evidence like "Signed by author" is visible.
-                    - For price, provide a single estimated reference price as a numeric string (e.g., "15.00" or "20") based on your general knowledge of the book identified. Acknowledge this is only an estimate based on training data.
-                    - For all other fields (title, author, publisher, language, edition, volume), extract if clearly identifiable.
-                    - If any field cannot be determined, you MUST return null as its value. Do NOT return text like 'Not visible in image' or 'N/A', use only JSON null.
-                    - Ensure the entire output is ONLY the JSON object, with no surrounding text or markdown formatting like ```json.
-                    """
-
-                    image_part = {"mime_type": "image/jpeg", "data": image_bytes}
-                    content_parts = [prompt, image_part] # Only prompt and one image
-
-                    response = model.generate_content(content_parts)
-                    logging.info("Gemini response received.")
-
-                    # Attempt to parse the JSON response
-                    try:
-                        response_text = response.text.strip()
-                        json_start = response_text.find('{'); json_end = response_text.rfind('}')
-                        if json_start != -1 and json_end != -1 and json_end > json_start:
-                             json_text = response_text[json_start:json_end+1]
-                             parsed_fields_dict = json.loads(json_text)
-                             logging.info("Successfully parsed JSON response from Gemini.")
-                             logging.info(f"Gemini Parsed Fields: {parsed_fields_dict}")
-                        else: raise ValueError(f"No valid JSON object found: {response_text[:500]}")
-                    except Exception as json_err:
-                        gemini_error = f"Failed to parse JSON from Gemini: {json_err} | Response: {getattr(response, 'text', 'N/A')[:500]}"
-                        logging.error(gemini_error); parsed_fields_dict = None
-                    if hasattr(response, 'prompt_feedback') and response.prompt_feedback.block_reason:
-                        block_reason = f"Gemini blocked: {response.prompt_feedback.block_reason}"; logging.error(block_reason)
-                        gemini_error = f"{gemini_error or ''} | {block_reason}".strip(" | "); parsed_fields_dict = None
-
-                except Exception as gemini_api_error:
-                    gemini_error = f"Gemini API Call Failed: {gemini_api_error}"
-                    logging.exception(gemini_error); parsed_fields_dict = None
-
-            elif not gemini_configured: gemini_error = "Gemini API Key not configured."; logging.error(gemini_error)
-            else: gemini_error = "Skipping Gemini: Image bytes missing."; logging.warning(gemini_error)
-
-
-            # 4. Prepare final response data
-            final_parsed_fields = { # Define all expected keys from the prompt
-                "title": None, "author": None, "isbn": None, "publisher": None,
-                "release_date": None, "language": None, "edition": None, "signature": None,
-                "volume": None, "price": None
-            }
-            if isinstance(parsed_fields_dict, dict):
-                 for key in final_parsed_fields.keys():
-                     final_parsed_fields[key] = parsed_fields_dict.get(key) # Populate from Gemini result
-
+            # 3. Prepare final response data (Upload URLs only)
             response_data = {
-                "message": "Image processed using Gemini (single image).",
-                "image_url": image_url, # GCS URL of the captured image
+                "message": "Image(s) uploaded successfully.",
+                "image_url": image_url_1, # URL for image 1 (primary)
+                "image_url_2": image_url_2, # URL for image 2 (if provided)
                 "gcs_error": gcs_error,
-                "gemini_error": gemini_error,
-                "parsed_fields": final_parsed_fields
-                # Removed fields related to image_2, lookup_error, stock_image_url
+                # Removed gemini_error, lookup_error, parsed_fields
             }
-            logging.info("Sending final response")
-            return (response_data, 200, response_headers) # Return data, status, CORS headers
+            logging.info("Sending final response (Upload URLs)")
+            return (response_data, 200, response_headers)
 
-        # Catch-all for unexpected errors
+        # Catch-all for unexpected errors during POST processing
         except Exception as e:
             logging.exception(f"Unexpected error processing POST request: {e}")
+            # Ensure CORS headers even on internal errors
             return ({'error': 'An unexpected internal error occurred'}, 500, response_headers)
 
     # --- Handle other methods ---
     else:
         logging.warning(f"Received unhandled method: {request.method}")
         response_data = {'error': f"Method {request.method} not allowed."}
+        # Ensure CORS headers on 405 response
         return (response_data, 405, response_headers)
+
+
