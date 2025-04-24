@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Book Scanner V3 (Hybrid)</title> <link rel="stylesheet" href="style.css">
+    <title>Book Scanner V3 (Hybrid)</title>
+    <link rel="stylesheet" href="style.css">
     <style>
         /* Basic styling for helper buttons/links */
         .field-helpers button, .field-helpers span { margin-left: 5px; cursor: pointer; color: blue; text-decoration: underline; background: none; border: none; padding: 0; font-size: 0.9em; }
@@ -18,10 +19,12 @@
         #bookDetailsForm input[type="checkbox"] { width: auto; margin-right: 5px;}
         #bookDetailsForm input[type="file"] { width: calc(90% - 160px); } /* Style file input */
         #bookDetailsForm input[readonly] { background-color: #eee; }
+        /* Styling for Paste Section */
         #pasteSection { margin-top: 15px; margin-bottom: 15px; padding: 10px; border: 1px solid #ccc; border-radius: 5px; background-color: #f9f9f9; }
         #pasteSection label { display: block; margin-bottom: 5px; font-weight: bold;}
         #pasteSection textarea { width: 98%; min-height: 80px; margin-bottom: 10px;}
         #pasteSection button { padding: 8px 15px; }
+        /* Styling for Image Upload Section */
         #imageUploadSection label { font-weight: bold; margin-right: 10px;}
 
         /* Responsive adjustments */
@@ -32,7 +35,6 @@
              #bookDetailsForm select,
              #bookDetailsForm textarea,
              #bookDetailsForm input[type="file"] { width: calc(100% - 110px); }
-             /* Ensure width override applies */
              #bookDetailsForm input[style*="width"],
              #bookDetailsForm textarea[style*="width"] { width: calc(100% - 110px) !important; }
              #pasteSection textarea { width: 95%; }
@@ -45,7 +47,7 @@
 
     <div id="pasteSection">
         <label for="pastedData">Paste Data from BVS GPT:</label>
-        <textarea id="pastedData" rows="6" placeholder="Paste the formatted output (e.g., CSV line or Key: Value pairs) from your Book Value Snap GPT here..."></textarea>
+        <textarea id="pastedData" rows="6" placeholder="Paste the formatted single CSV line (10 fields, all quoted) from your Book Value Snap GPT here..."></textarea>
         <button type="button" id="populateFromTextButton">Paste Data & Populate Form</button>
     </div>
 
@@ -58,108 +60,29 @@
              <div id="filePreview" style="margin-top: 5px; font-size: 0.9em;"></div> </div>
          <hr style="margin: 15px 0;">
 
-        <div>
-            <label for="sku">SKU:</label>
-            <input type="text" id="sku" name="sku" maxlength="24">
-        </div>
-        <div>
-            <label for="title">Title:</label>
-            <input type="text" id="title" name="title">
-        </div>
-        <div>
-            <label for="author">Author:</label>
-            <input type="text" id="author" name="author">
-        </div>
-        <div>
-            <label for="isbn">ISBN:</label>
-            <input type="text" id="isbn" name="isbn">
-        </div>
-         <div>
-            <label for="condition">Condition:</label>
-            <select id="condition" name="condition">
-                <option value="11">New</option>
-                <option value="1">Used: Like New</option>
-                <option value="2" selected>Used: Very Good</option> <option value="3">Used: Good</option>
-                <option value="4">Used: Acceptable</option>
-                <option value="5">Collectible: Like New</option>
-                <option value="6">Collectible: Very Good</option>
-                <option value="7">Collectible: Good</option>
-                <option value="8">Collectible: Acceptable</option>
-            </select>
-        </div>
-        <div>
-            <label for="condition_text">Condition Notes:</label>
-            <input type="text" id="condition_text" name="condition_text" maxlength="32">
-        </div>
-         <div>
-            <label for="price">Price:</label>
-            <input type="text" id="price" name="price" value="50"> </div>
-        <div>
-            <label for="qty">Quantity:</label>
-            <input type="number" id="qty" name="qty" value="1" min="1" step="1">
-        </div>
-        <div>
-            <label for="publisher">Publisher:</label>
-            <input type="text" id="publisher" name="publisher">
-        </div>
-         <div> <label for="signed_flag">Signed?</label>
-            <input type="checkbox" id="signed_flag" name="signed_flag">
-        </div>
-        <div> <label for="edition">Edition Details:</label>
-            <input type="text" id="edition" name="edition" maxlength="32" placeholder="e.g., 1st Edition">
-            <span class="field-helpers">
-                 <button type="button" id="btn1stEd">1st</button>
-            </span>
-        </div>
-         <div> <label for="language">Language:</label>
-            <input type="text" id="language" name="language" value="English">
-        </div>
-         <div> <label for="volume">Volume:</label>
-            <input type="text" id="volume" name="volume">
-        </div>
-        <div> <label for="media">Media:</label>
-            <input type="text" id="media" name="media" placeholder="e.g., Paperback">
-            <span class="field-helpers">
-                <button type="button" id="btnMediaPB">PB</button>
-                <button type="button" id="btnMediaHC">HC</button>
-                <button type="button" id="btnMediaCD">CD</button>
-                <button type="button" id="btnMediaDVD">DVD</button>
-            </span>
-        </div>
-        <div>
-            <label for="notes">Notes (Desc/Feat):</label>
-            <textarea id="notes" name="notes" rows="3">NO WRITING OR MARKING IN TEXT A CLEAN AND SOLID BOOK</textarea>
-        </div>
-         <div>
-            <label for="release_date">Release Date (Year):</label> <input type="text" id="release_date" name="release_date" placeholder="YYYY">
-        </div>
-         <div>
-            <label for="location">Location (Shelf):</label>
-            <input type="text" id="location" name="location">
-        </div>
-        <div>
-            <label for="cost">Cost (Optional):</label>
-            <input type="number" id="cost" name="cost" step="0.01">
-        </div>
-        <div>
-            <label for="source">Source:</label>
-            <input type="text" id="source" name="source" maxlength="32">
-        </div>
-         <div>
-            <label for="image_url">Image URL (from GCS):</label> <input type="text" id="image_url" name="image_url" readonly>
-         </div>
-
-        <hr>
+        <div><label for="sku">SKU:</label><input type="text" id="sku" name="sku" maxlength="24"></div>
+        <div><label for="isbn">ISBN:</label><input type="text" id="isbn" name="isbn"></div>
+        <div><label for="title">Title:</label><input type="text" id="title" name="title"></div>
+        <div><label for="author">Author:</label><input type="text" id="author" name="author"></div>
+        <div><label for="publisher">Publisher:</label><input type="text" id="publisher" name="publisher"></div>
+        <div><label for="release_date">Release Date (Year):</label><input type="text" id="release_date" name="release_date" placeholder="YYYY"></div>
+        <div><label for="price">Price:</label><input type="text" id="price" name="price" value="50"></div> <div><label for="asin1">ASIN:</label><input type="text" id="asin1" name="asin1"></div> <div><label for="edition">Edition Details:</label><input type="text" id="edition" name="edition" maxlength="32" placeholder="e.g., 1st Edition"><span class="field-helpers"><button type="button" id="btn1stEd">1st</button></span></div>
+        <div><label for="volume">Volume:</label><input type="text" id="volume" name="volume"></div> <div><label for="language">Language:</label><input type="text" id="language" name="language" value="English"></div>
+        <div><label for="condition">Condition:</label><select id="condition" name="condition"><option value="11">New</option><option value="1">Used: Like New</option><option value="2" selected>Used: Very Good</option><option value="3">Used: Good</option><option value="4">Used: Acceptable</option><option value="5">Collectible: Like New</option><option value="6">Collectible: Very Good</option><option value="7">Collectible: Good</option><option value="8">Collectible: Acceptable</option></select></div>
+        <div><label for="condition_text">Condition Notes:</label><input type="text" id="condition_text" name="condition_text" maxlength="32"></div>
+        <div><label for="qty">Quantity:</label><input type="number" id="qty" name="qty" value="1" min="1" step="1"></div>
+        <div><label for="media">Media:</label><input type="text" id="media" name="media" placeholder="e.g., Paperback"><span class="field-helpers"><button type="button" id="btnMediaPB">PB</button><button type="button" id="btnMediaHC">HC</button><button type="button" id="btnMediaCD">CD</button><button type="button" id="btnMediaDVD">DVD</button></span></div>
+        <div><label for="signed_flag">Signed?</label><input type="checkbox" id="signed_flag" name="signed_flag"></div> <div><label for="notes">Notes (Desc/Feat):</label><textarea id="notes" name="notes" rows="3">NO WRITING OR MARKING IN TEXT A CLEAN AND SOLID BOOK</textarea></div>
+        <div><label for="location">Location (Shelf):</label><input type="text" id="location" name="location"></div>
+        <div><label for="cost">Cost (Optional):</label><input type="number" id="cost" name="cost" step="0.01"></div>
+        <div><label for="source">Source:</label><input type="text" id="source" name="source" maxlength="32"></div>
+        <div><label for="image_url">Image URL 1 (GCS):</label><input type="text" id="image_url" name="image_url" readonly></div>
+        <div><label for="image_url_2">Image URL 2 (GCS):</label><input type="text" id="image_url_2" name="image_url_2" readonly></div> <hr>
         <button type="button" id="addBookButton" style="padding: 10px; margin-top: 15px; font-size: 1.1em;">Add Book to Session List</button>
-
-    </div> <div id="sessionBooksList" style="margin-top: 20px;">
-        <h2>Books Added This Session: <span id="bookCount">0</span></h2>
-        <ul id="booksUl"></ul>
     </div>
 
-    <div id="exportSection" style="margin-top: 20px;">
-         <button type="button" id="exportCsvButton" style="padding: 10px; font-size: 1.1em;">Export List to CSV</button>
-    </div>
+    <div id="sessionBooksList" style="margin-top: 20px;"><h2>Books Added This Session: <span id="bookCount">0</span></h2><ul id="booksUl"></ul></div>
+    <div id="exportSection" style="margin-top: 20px;"><button type="button" id="exportCsvButton" style="padding: 10px; font-size: 1.1em;">Export List to CSV</button></div>
 
     <script src="scanner.js"></script>
 
