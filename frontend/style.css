@@ -296,3 +296,25 @@ dialog h2 { margin-bottom: 16px; }
 .slips li.unsure .note { color: var(--warn); }
 .add-row { border-top: 1px solid var(--line); padding-top: 14px; }
 .books li.saved-row { grid-template-columns: 1fr auto; }
+
+/* ---------- printed SKU slips ---------- */
+
+#printSheet { display: none; }
+
+@page { margin: 0.4in; }
+
+@media print {
+  body { background: #fff; padding: 0; }
+  body > *:not(#printSheet) { display: none !important; }
+  #printSheet { display: grid; grid-template-columns: repeat(5, 1fr); }
+  /* Ten to a US Letter page. Dashed edges are the cut lines. */
+  .slip {
+    height: 4.9in; padding: 0.14in 0.08in; overflow: hidden; text-align: center;
+    border: 1px dashed #888; color: #000; break-inside: avoid;
+  }
+  .slip-sku { margin: 0; font: 700 22pt/1.1 var(--sans); letter-spacing: .01em; overflow-wrap: anywhere; }
+  .slip-sku.medium { font-size: 16pt; }
+  .slip-sku.long { font-size: 11pt; }
+  /* The title sits lower down, inside the book, to match slip to book when inserting. */
+  .slip-title { margin: 1.1in 0 0; font: 400 8pt/1.25 var(--sans); color: #444; overflow-wrap: anywhere; }
+}

@@ -627,6 +627,7 @@ function renderBooks() {
   $('bookCount').textContent = books.length;
   $('emptyList').hidden = any;
   $('exportButton').hidden = !any;
+  $('printButton').hidden = !any;
   $('clearButton').hidden = !any;
 }
 
@@ -640,6 +641,25 @@ function exportCsv() {
   link.remove();
   setTimeout(() => URL.revokeObjectURL(link.href), 1000);
   toast(`Exported ${books.length} ${books.length === 1 ? 'book' : 'books'}`);
+}
+
+/** Lay out one cut-out slip per book, SKU at the top so it shows above the pages, and print. */
+function printSlips() {
+  const sheet = $('printSheet');
+  sheet.replaceChildren();
+  for (const book of books) {
+    const slip = document.createElement('div');
+    slip.className = 'slip';
+    const sku = document.createElement('p');
+    sku.className = `slip-sku${book.sku.length > 12 ? ' long' : book.sku.length > 8 ? ' medium' : ''}`;
+    sku.textContent = book.sku;
+    const title = document.createElement('p');
+    title.className = 'slip-title';
+    title.textContent = book.title || `ISBN ${book.isbn}`;
+    slip.append(sku, title);
+    sheet.append(slip);
+  }
+  window.print();
 }
 
 function clearList() {
@@ -723,6 +743,7 @@ for (const chip of document.querySelectorAll('.chips button')) {
 }
 $('exportButton').addEventListener('click', exportCsv);
 $('clearButton').addEventListener('click', clearList);
+$('printButton').addEventListener('click', printSlips);
 $('settingsButton').addEventListener('click', openSettings);
 $('settingsCancel').addEventListener('click', () => $('settingsDialog').close());
 $('settingsForm').addEventListener('submit', saveSettings);

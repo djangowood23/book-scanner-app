@@ -186,6 +186,7 @@
     <p class="empty" id="emptyList">Books you add appear here. They stay on this device until you clear the list.</p>
     <ul class="books" id="books"></ul>
     <button type="button" class="btn wide" id="exportButton" hidden>Export CSV for AOB</button>
+    <button type="button" class="btn wide" id="printButton" hidden>Print SKU slips</button>
   </section>
 </main>
 
@@ -286,6 +287,8 @@
     <button type="button" class="btn primary" id="cropApply">Apply</button>
   </div>
 </dialog>
+
+<div id="printSheet" aria-hidden="true"></div>
 
 <div class="toast" id="toast" role="status" hidden></div>
 <canvas id="canvas" hidden></canvas>
