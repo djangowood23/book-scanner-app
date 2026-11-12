@@ -2,6 +2,7 @@ import {
   CONDITIONS, DEFAULT_CORNERS, buildCsv, cleanIsbn, csvFilename, isValidIsbn, listingSize, nextSku, parseSku,
   quadSize, validCorners, warpQuad,
 } from './lib.js';
+import { sendToAob } from './send.js';
 
 const MAX_PHOTOS = 4;
 const MAX_EDGE = 1600; // long edge in pixels: plenty for reading print, small enough to upload quickly
@@ -628,6 +629,7 @@ function renderBooks() {
   $('emptyList').hidden = any;
   $('exportButton').hidden = !any;
   $('printButton').hidden = !any;
+  $('sendButton').hidden = !any;
   $('clearButton').hidden = !any;
 }
 
@@ -641,6 +643,25 @@ function exportCsv() {
   link.remove();
   setTimeout(() => URL.revokeObjectURL(link.href), 1000);
   toast(`Exported ${books.length} ${books.length === 1 ? 'book' : 'books'}`);
+}
+
+async function sendBooks() {
+  const button = $('sendButton');
+  $('listError').hidden = true;
+  setBusy(button, 'Sending…');
+  const result = await sendToAob(csvFilename(), buildCsv(books, settings.layout), settings.passcode);
+  setBusy(button, null);
+  if (!result.sent) {
+    $('listError').textContent = result.message ?? 'The file could not be sent.';
+    $('listError').hidden = false;
+    return;
+  }
+  toast(`Sent ${books.length} ${books.length === 1 ? 'book' : 'books'} to AOB`);
+  if (confirm('Sent to AOB. It usually shows up there within a few minutes.\n\nClear this list now?')) {
+    books = [];
+    save('bookscanner.books', books);
+    startNewBook();
+  }
 }
 
 /** Lay out one cut-out slip per book, SKU at the top so it shows above the pages, and print. */
@@ -744,6 +765,7 @@ for (const chip of document.querySelectorAll('.chips button')) {
 $('exportButton').addEventListener('click', exportCsv);
 $('clearButton').addEventListener('click', clearList);
 $('printButton').addEventListener('click', printSlips);
+$('sendButton').addEventListener('click', sendBooks);
 $('settingsButton').addEventListener('click', openSettings);
 $('settingsCancel').addEventListener('click', () => $('settingsDialog').close());
 $('settingsForm').addEventListener('submit', saveSettings);

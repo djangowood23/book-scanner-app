@@ -1,4 +1,5 @@
 import { buildLocationsCsv, matchSku, parseInventory } from './lib.js';
+import { sendToAob } from './send.js';
 
 const MAX_EDGE = 2000; // handwriting on a row of slips needs more detail than a book cover
 
@@ -142,6 +143,7 @@ function renderSaved() {
   const any = saved.length > 0;
   $('emptySaved').hidden = any;
   $('exportButton').hidden = !any;
+  $('sendButton').hidden = !any;
   $('clearSaved').hidden = !any;
 }
 
@@ -163,12 +165,37 @@ function saveShelf() {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
+function locationsFilename() {
+  const stamp = new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14);
+  return `aob_locations_${stamp}.csv`;
+}
+
+async function sendLocations() {
+  const button = $('sendButton');
+  $('savedError').hidden = true;
+  button.disabled = true;
+  button.classList.add('busy');
+  const result = await sendToAob(locationsFilename(), buildLocationsCsv(saved), settings.passcode);
+  button.disabled = false;
+  button.classList.remove('busy');
+  if (!result.sent) {
+    $('savedError').textContent = result.message ?? 'The file could not be sent.';
+    $('savedError').hidden = false;
+    return;
+  }
+  toast(`Sent ${saved.length} locations to AOB`);
+  if (confirm('Sent to AOB. It usually shows up there within a few minutes.\n\nClear the saved shelves now?')) {
+    saved = [];
+    save('bookscanner.locations', saved);
+    renderSaved();
+  }
+}
+
 function exportLocations() {
   const blob = new Blob([buildLocationsCsv(saved)], { type: 'text/csv;charset=utf-8' });
   const link = document.createElement('a');
   link.href = URL.createObjectURL(blob);
-  const stamp = new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14);
-  link.download = `aob_locations_${stamp}.csv`;
+  link.download = locationsFilename();
   document.body.append(link);
   link.click();
   link.remove();
@@ -340,6 +367,7 @@ $('addForm').addEventListener('submit', (event) => {
 });
 $('saveShelf').addEventListener('click', saveShelf);
 $('exportButton').addEventListener('click', exportLocations);
+$('sendButton').addEventListener('click', sendLocations);
 $('clearSaved').addEventListener('click', () => {
   if (!confirm(`Clear all ${saved.length} saved locations? Export first if you still need them.`)) return;
   saved = [];
