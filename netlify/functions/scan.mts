@@ -1,19 +1,11 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { getStore } from "@netlify/blobs";
 import type { Config } from "@netlify/functions";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import { describeError, fallbackParams, makeClient, MODELS, parseQuality, ReadError, type Quality } from "../lib/claude.mts";
 import { checkPasscode, decodeDataUrl, EXTENSIONS, json, type DecodedImage } from "../lib/http.mts";
 
-// The seller picks the reading quality in Settings. "best" is the default because edition
-// and price calls matter most; the others trade some judgement for a lower cost per book.
-const MODELS = {
-  best: "claude-opus-5-5",
-  balanced: "claude-sonnet-5-5",
-  cheapest: "claude-haiku-5-5",
-} as const;
-type Quality = keyof typeof MODELS;
 const MAX_IMAGES = 4;
 export const PHOTO_STORE = "book-photos";
 
@@ -80,14 +72,7 @@ async function storePhotos(images: DecodedImage[], skip: boolean[], origin: stri
 }
 
 async function readBook(images: DecodedImage[], isbnHint: string | null, quality: Quality): Promise<Book> {
-  // CLAUDE_ACCESS is an alternative name for the same key, for when Netlify's
-  // form objects to a variable that looks like a secret.
-  const apiKey = (Netlify.env.get("ANTHROPIC_API_KEY") || Netlify.env.get("CLAUDE_ACCESS") || "").trim();
-  if (!apiKey) {
-    throw new ReadError("AI reading is not set up yet: add ANTHROPIC_API_KEY to this site's environment variables in Netlify and redeploy.");
-  }
-  // One attempt inside Netlify's 60 second limit for synchronous functions.
-  const client = new Anthropic({ apiKey, timeout: 50_000, maxRetries: 0 });
+  const client = makeClient();
 
   const instruction = isbnHint
     ? `Catalogue this book. The seller scanned this ISBN from the barcode: ${isbnHint}.`
@@ -98,9 +83,7 @@ async function readBook(images: DecodedImage[], isbnHint: string | null, quality
     max_tokens: 8000,
     system: SYSTEM,
     output_config: { effort: "medium", format: betaZodOutputFormat(BookSchema) },
-    // If the model declines a request, the API retries it on a fallback model in the same
-    // call. The smallest model has no such fallback.
-    ...(quality === "cheapest" ? {} : { betas: ["server-side-fallback-2026-07-01" as const], fallbacks: "default" as const }),
+    ...fallbackParams(quality),
     messages: [
       {
         role: "user",
@@ -133,31 +116,6 @@ async function readBook(images: DecodedImage[], isbnHint: string | null, quality
   return book;
 }
 
-/** An error whose message is safe and useful to show the seller. */
-class ReadError extends Error {}
-
-function describeError(error: unknown): string {
-  if (error instanceof ReadError) return error.message;
-  if (error instanceof Anthropic.AuthenticationError || error instanceof Anthropic.PermissionDeniedError) {
-    return "The ANTHROPIC_API_KEY set in Netlify was rejected. Check the key and redeploy.";
-  }
-  if (error instanceof Anthropic.RateLimitError) {
-    return "The AI service is rate limiting this key. Wait a moment and try again.";
-  }
-  if (error instanceof Anthropic.APIConnectionTimeoutError) {
-    return "The AI took too long to answer. Try again, or use fewer photos.";
-  }
-  if (error instanceof Anthropic.APIConnectionError) {
-    return "Could not reach the AI service. Try again.";
-  }
-  if (error instanceof Anthropic.APIError) {
-    console.error("Anthropic API error", error.status, error.message);
-    return `The AI service returned an error (${error.status ?? "unknown"}). Try again.`;
-  }
-  console.error("Unexpected read error", error);
-  return "Something went wrong reading the photos. Try again.";
-}
-
 export default async (req: Request): Promise<Response> => {
   const denied = checkPasscode(req);
   if (denied) return denied;
@@ -187,7 +145,7 @@ export default async (req: Request): Promise<Response> => {
   const isbnHint = isIsbn(payload.isbn_hint) ? payload.isbn_hint.toUpperCase() : null;
   const wantRead = payload.read !== false;
   const wantStore = payload.store !== false;
-  const quality: Quality = typeof payload.quality === "string" && payload.quality in MODELS ? (payload.quality as Quality) : "best";
+  const quality = parseQuality(payload.quality);
   const origin = new URL(req.url).origin;
 
   const [stored, read] = await Promise.allSettled([

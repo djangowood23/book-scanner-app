@@ -229,3 +229,76 @@ export function listingSize(bookW, bookH) {
   const pad = Math.round(edge * LISTING_MARGIN);
   return { innerW, innerH, pad, width: innerW + 2 * pad, height: innerH + 2 * pad };
 }
+
+// ---------- shelving: check handwritten SKUs against the AOB inventory export ----------
+
+/**
+ * Read an AOB inventory export (tab-delimited, or comma-separated) into { sku: title }.
+ * Only the sku column is required. Returns null when there is no sku column.
+ */
+export function parseInventory(text) {
+  const lines = String(text ?? '').replace(/^﻿/, '').split(/\r?\n/).filter((line) => line.trim());
+  if (lines.length === 0) return null;
+  const delimiter = lines[0].includes('\t') ? '\t' : ',';
+  const clean = (cell) => cell.trim().replace(/^"(.*)"$/, '$1').replace(/""/g, '"');
+  const headers = lines[0].split(delimiter).map((cell) => clean(cell).toLowerCase());
+  const skuAt = headers.indexOf('sku');
+  const titleAt = headers.indexOf('title');
+  if (skuAt === -1) return null;
+  const inventory = {};
+  for (const line of lines.slice(1)) {
+    const cells = line.split(delimiter);
+    const sku = clean(cells[skuAt] ?? '');
+    if (sku) inventory[sku] = titleAt === -1 ? '' : clean(cells[titleAt] ?? '');
+  }
+  return inventory;
+}
+
+/** True when two strings are the same or differ by one changed, added or missing character. */
+export function withinOneEdit(a, b) {
+  if (a === b) return true;
+  if (Math.abs(a.length - b.length) > 1) return false;
+  let i = 0;
+  while (i < a.length && i < b.length && a[i] === b[i]) i++;
+  if (a.length === b.length) return a.slice(i + 1) === b.slice(i + 1);
+  const [long, short] = a.length > b.length ? [a, b] : [b, a];
+  return long.slice(i + 1) === short.slice(i);
+}
+
+function titleOverlap(a, b) {
+  const words = (text) => new Set(String(text).toLowerCase().match(/[a-z0-9]{4,}/g) ?? []);
+  const seen = words(a);
+  let shared = 0;
+  for (const word of words(b)) if (seen.has(word)) shared++;
+  return shared;
+}
+
+/**
+ * Check a SKU as read from a slip against the inventory.
+ * status: 'ok' (a real SKU), 'unknown' (not in the inventory; see suggestions),
+ * or 'unverified' (no inventory loaded).
+ */
+export function matchSku(sku, inventory, seenTitle = '') {
+  if (!inventory || Object.keys(inventory).length === 0) return { status: 'unverified', title: '', suggestions: [] };
+  if (Object.hasOwn(inventory, sku)) return { status: 'ok', title: inventory[sku], suggestions: [] };
+  const lower = sku.toLowerCase();
+  const suggestions = Object.keys(inventory)
+    .filter((other) => withinOneEdit(lower, other.toLowerCase()))
+    .map((other) => ({
+      sku: other,
+      title: inventory[other],
+      // Same letters in different case is the likeliest slip of all; then a matching book title.
+      score: (other.toLowerCase() === lower ? 100 : 0) + titleOverlap(seenTitle, inventory[other]),
+    }))
+    .sort((a, b) => b.score - a.score || a.sku.localeCompare(b.sku))
+    .slice(0, 4)
+    .map(({ sku: other, title }) => ({ sku: other, title }));
+  return { status: 'unknown', title: '', suggestions };
+}
+
+/** A two-column file AOB can import to set locations without touching anything else. */
+export function buildLocationsCsv(assignments) {
+  const lines = ['sku,location'];
+  for (const { sku, location } of assignments) lines.push(`${escapeCsvCell(sku)},${escapeCsvCell(location)}`);
+  return lines.join('\n');
+}

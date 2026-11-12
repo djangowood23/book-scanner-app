@@ -27,6 +27,14 @@ Best (Claude Opus 5.5, the default), Balanced (Claude Sonnet 5.5) or Cheapest
 Photos are stored in Netlify Blobs when a book is added and served from `/img/<name>`, so the CSV
 carries public image links.
 
+## Shelving
+
+`shelve.html` records which shelf or tub each book is in. Enter the location
+(or read its label with the camera), photograph the handwritten SKU slips, and
+each SKU is checked against a loaded AOB inventory export so misread
+handwriting is flagged with the closest real SKUs. Saved shelves export as
+`aob_locations_<timestamp>.csv` with two columns, `sku` and `location`.
+
 ## Layout
 
 | Path | What it is |
@@ -34,6 +42,8 @@ carries public image links.
 | `frontend/` | The static site (no build step) |
 | `frontend/lib.js` | SKU, ISBN, CSV and image-straightening helpers |
 | `netlify/functions/scan.mts` | `POST /api/scan`: reads photos with Claude, or stores them |
+| `frontend/shelve.html`, `shelve.js` | The shelving page |
+| `netlify/functions/skus.mts` | `POST /api/skus`: reads SKU slips or a location label |
 | `netlify/functions/image.mts` | `GET /img/:name`: serves a stored photo |
 | `tests/` | `npm test` |
 
