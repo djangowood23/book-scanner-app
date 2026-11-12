@@ -13,6 +13,7 @@
 
 <header class="topbar">
   <h1>Book Scanner</h1>
+  <a class="nav" href="shelve.html">Shelve</a>
   <a class="count" href="#list" id="countLink"><span id="bookCount">0</span> in list</a>
   <button type="button" class="icon-btn" id="settingsButton" aria-label="Settings">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10" /><circle cx="16" cy="7" r="2.2"/><circle cx="8" cy="17" r="2.2"/></svg>
@@ -184,7 +185,10 @@
     </div>
     <p class="empty" id="emptyList">Books you add appear here. They stay on this device until you clear the list.</p>
     <ul class="books" id="books"></ul>
+    <p class="form-error" id="listError" role="alert" hidden></p>
+    <button type="button" class="btn primary wide" id="sendButton" hidden>Send to AOB</button>
     <button type="button" class="btn wide" id="exportButton" hidden>Export CSV for AOB</button>
+    <button type="button" class="btn wide" id="printButton" hidden>Print SKU slips</button>
   </section>
 </main>
 
@@ -285,6 +289,8 @@
     <button type="button" class="btn primary" id="cropApply">Apply</button>
   </div>
 </dialog>
+
+<div id="printSheet" aria-hidden="true"></div>
 
 <div class="toast" id="toast" role="status" hidden></div>
 <canvas id="canvas" hidden></canvas>

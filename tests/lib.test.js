@@ -100,3 +100,39 @@ test('listing image meets the marketplace size rules', () => {
   const mid = listingSize(900, 1300);
   assert.equal(mid.innerH, 1300);
 });
+
+import { buildLocationsCsv, matchSku, parseInventory, withinOneEdit } from '../frontend/lib.js';
+
+test('inventory export parsing', () => {
+  const inventory = parseInventory('sku\tprice\ttitle\tlocation\r\nK-5405\t25.00\tEncounters with Paradise\tA1\r\ng-8425\t30\t"The ""Old"" Book"\t\r\n\r\n');
+  assert.deepEqual(inventory, { 'K-5405': 'Encounters with Paradise', 'g-8425': 'The "Old" Book' });
+  assert.deepEqual(parseInventory('SKU,Price\nT-1,20'), { 'T-1': '' });
+  assert.equal(parseInventory('title\tprice\nx\t1'), null);
+});
+
+test('one-edit comparison', () => {
+  assert.ok(withinOneEdit('k-5405', 'k-5905'));
+  assert.ok(withinOneEdit('k-540', 'k-5405'));
+  assert.ok(withinOneEdit('k-54005', 'k-5405'));
+  assert.ok(!withinOneEdit('k-5405', 'k-5950'));
+  assert.ok(!withinOneEdit('k-54', 'k-5405'));
+});
+
+test('SKU matching against the inventory', () => {
+  const inventory = { 'K-5405': 'Encounters with Paradise: Views of Hawaii', 'K-5905': 'A History of Rome', 'G-5560': 'Gardens', 'g-8425': 'Maps' };
+  assert.deepEqual(matchSku('K-5405', inventory), { status: 'ok', title: 'Encounters with Paradise: Views of Hawaii', suggestions: [] });
+  assert.equal(matchSku('K-5405', {}).status, 'unverified');
+  // Wrong case is not a real SKU, and the right-case one is offered first.
+  const wrongCase = matchSku('g-5560', inventory);
+  assert.equal(wrongCase.status, 'unknown');
+  assert.equal(wrongCase.suggestions[0].sku, 'G-5560');
+  // A misread digit: both neighbours are offered, the one whose title matches the cover first.
+  const misread = matchSku('K-5805', inventory, 'Encounters with Paradise');
+  assert.deepEqual(misread.suggestions.map((s) => s.sku), ['K-5405', 'K-5905']);
+  assert.deepEqual(matchSku('ZZ-1', inventory).suggestions, []);
+});
+
+test('locations file', () => {
+  assert.equal(buildLocationsCsv([{ sku: 'K-5405', location: 'Tub 12' }, { sku: 'T-1', location: 'Shelf A, row 2' }]),
+    'sku,location\nK-5405,Tub 12\nT-1,"Shelf A, row 2"');
+});

@@ -2,6 +2,7 @@ import {
   CONDITIONS, DEFAULT_CORNERS, buildCsv, cleanIsbn, csvFilename, isValidIsbn, listingSize, nextSku, parseSku,
   quadSize, validCorners, warpQuad,
 } from './lib.js';
+import { sendToAob } from './send.js';
 
 const MAX_PHOTOS = 4;
 const MAX_EDGE = 1600; // long edge in pixels: plenty for reading print, small enough to upload quickly
@@ -627,6 +628,8 @@ function renderBooks() {
   $('bookCount').textContent = books.length;
   $('emptyList').hidden = any;
   $('exportButton').hidden = !any;
+  $('printButton').hidden = !any;
+  $('sendButton').hidden = !any;
   $('clearButton').hidden = !any;
 }
 
@@ -640,6 +643,44 @@ function exportCsv() {
   link.remove();
   setTimeout(() => URL.revokeObjectURL(link.href), 1000);
   toast(`Exported ${books.length} ${books.length === 1 ? 'book' : 'books'}`);
+}
+
+async function sendBooks() {
+  const button = $('sendButton');
+  $('listError').hidden = true;
+  setBusy(button, 'Sending…');
+  const result = await sendToAob(csvFilename(), buildCsv(books, settings.layout), settings.passcode);
+  setBusy(button, null);
+  if (!result.sent) {
+    $('listError').textContent = result.message ?? 'The file could not be sent.';
+    $('listError').hidden = false;
+    return;
+  }
+  toast(`Sent ${books.length} ${books.length === 1 ? 'book' : 'books'} to AOB`);
+  if (confirm('Sent to AOB. It usually shows up there within a few minutes.\n\nClear this list now?')) {
+    books = [];
+    save('bookscanner.books', books);
+    startNewBook();
+  }
+}
+
+/** Lay out one cut-out slip per book, SKU at the top so it shows above the pages, and print. */
+function printSlips() {
+  const sheet = $('printSheet');
+  sheet.replaceChildren();
+  for (const book of books) {
+    const slip = document.createElement('div');
+    slip.className = 'slip';
+    const sku = document.createElement('p');
+    sku.className = `slip-sku${book.sku.length > 12 ? ' long' : book.sku.length > 8 ? ' medium' : ''}`;
+    sku.textContent = book.sku;
+    const title = document.createElement('p');
+    title.className = 'slip-title';
+    title.textContent = book.title || `ISBN ${book.isbn}`;
+    slip.append(sku, title);
+    sheet.append(slip);
+  }
+  window.print();
 }
 
 function clearList() {
@@ -723,6 +764,8 @@ for (const chip of document.querySelectorAll('.chips button')) {
 }
 $('exportButton').addEventListener('click', exportCsv);
 $('clearButton').addEventListener('click', clearList);
+$('printButton').addEventListener('click', printSlips);
+$('sendButton').addEventListener('click', sendBooks);
 $('settingsButton').addEventListener('click', openSettings);
 $('settingsCancel').addEventListener('click', () => $('settingsDialog').close());
 $('settingsForm').addEventListener('submit', saveSettings);

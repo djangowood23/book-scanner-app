@@ -27,6 +27,14 @@ Best (Claude Opus 5.5, the default), Balanced (Claude Sonnet 5.5) or Cheapest
 Photos are stored in Netlify Blobs when a book is added and served from `/img/<name>`, so the CSV
 carries public image links.
 
+## Shelving
+
+`shelve.html` records which shelf or tub each book is in. Enter the location
+(or read its label with the camera), photograph the handwritten SKU slips, and
+each SKU is checked against a loaded AOB inventory export so misread
+handwriting is flagged with the closest real SKUs. Saved shelves export as
+`aob_locations_<timestamp>.csv` with two columns, `sku` and `location`.
+
 ## Layout
 
 | Path | What it is |
@@ -34,6 +42,9 @@ carries public image links.
 | `frontend/` | The static site (no build step) |
 | `frontend/lib.js` | SKU, ISBN, CSV and image-straightening helpers |
 | `netlify/functions/scan.mts` | `POST /api/scan`: reads photos with Claude, or stores them |
+| `frontend/shelve.html`, `shelve.js` | The shelving page |
+| `netlify/functions/skus.mts` | `POST /api/skus`: reads SKU slips or a location label |
+| `netlify/functions/send.mts` | `POST /api/send`: delivers an export file to AOB over FTP |
 | `netlify/functions/image.mts` | `GET /img/:name`: serves a stored photo |
 | `tests/` | `npm test` |
 
@@ -51,6 +62,7 @@ On plans without scope selection, leave "Contains secret values" unticked so
 | --- | --- | --- |
 | `ANTHROPIC_API_KEY` (or `CLAUDE_ACCESS`) | yes | Lets the scan function call Claude. Without it the app still works for manual entry. |
 | `APP_PASSCODE` | no | If set, the app must be given the same passcode in Settings before it can read or save photos. Recommended, since the site is public and each read spends API credit. |
+| `AOB_FTP_USER`, `AOB_FTP_PASSWORD` | no | The AOB FTP login. With these and `APP_PASSCODE` set, Send to AOB delivers files straight to AOB. `AOB_FTP_HOST` (default `ftp.theartofbooks.com`) and `AOB_FTP_DIR` (default the main directory) are optional. |
 
 ## Development
 
