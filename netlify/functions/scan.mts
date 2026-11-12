@@ -6,7 +6,10 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { checkPasscode, decodeDataUrl, EXTENSIONS, json, type DecodedImage } from "../lib/http.mts";
 
-const MODEL = "claude-opus-5-5";
+// The everyday read uses the small model, at a fraction of a cent per book. The seller can
+// ask for a careful re-read, which uses the most capable one for edition and value calls.
+const QUICK_MODEL = "claude-haiku-5-5";
+const CAREFUL_MODEL = "claude-opus-5-5";
 const MAX_IMAGES = 4;
 export const PHOTO_STORE = "book-photos";
 
@@ -72,7 +75,7 @@ async function storePhotos(images: DecodedImage[], skip: boolean[], origin: stri
   );
 }
 
-async function readBook(images: DecodedImage[], isbnHint: string | null): Promise<Book> {
+async function readBook(images: DecodedImage[], isbnHint: string | null, careful: boolean): Promise<Book> {
   // CLAUDE_ACCESS is an alternative name for the same key, for when Netlify's
   // form objects to a variable that looks like a secret.
   const apiKey = (Netlify.env.get("ANTHROPIC_API_KEY") || Netlify.env.get("CLAUDE_ACCESS") || "").trim();
@@ -87,13 +90,13 @@ async function readBook(images: DecodedImage[], isbnHint: string | null): Promis
     : "Catalogue this book.";
 
   const response = await client.beta.messages.parse({
-    model: MODEL,
+    model: careful ? CAREFUL_MODEL : QUICK_MODEL,
     max_tokens: 8000,
     system: SYSTEM,
     output_config: { effort: "medium", format: betaZodOutputFormat(BookSchema) },
-    // If the model declines a request, the API retries it on a fallback model in the same call.
-    betas: ["server-side-fallback-2026-07-01"],
-    fallbacks: "default",
+    // If the careful model declines a request, the API retries it on a fallback model in the
+    // same call. The small model has no such fallback.
+    ...(careful ? { betas: ["server-side-fallback-2026-07-01" as const], fallbacks: "default" as const } : {}),
     messages: [
       {
         role: "user",
@@ -155,7 +158,7 @@ export default async (req: Request): Promise<Response> => {
   const denied = checkPasscode(req);
   if (denied) return denied;
 
-  let payload: { images?: unknown; isbn_hint?: unknown; read?: unknown; store?: unknown };
+  let payload: { images?: unknown; isbn_hint?: unknown; read?: unknown; store?: unknown; careful?: unknown };
   try {
     payload = await req.json();
   } catch {
@@ -184,7 +187,7 @@ export default async (req: Request): Promise<Response> => {
 
   const [stored, read] = await Promise.allSettled([
     wantStore ? storePhotos(images, skip, origin) : Promise.resolve(images.map(() => null)),
-    wantRead ? readBook(images, isbnHint) : Promise.resolve(null),
+    wantRead ? readBook(images, isbnHint, payload.careful === true) : Promise.resolve(null),
   ]);
 
   if (stored.status === "rejected") console.error("Photo storage failed", stored.reason);

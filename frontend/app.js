@@ -138,6 +138,7 @@ function startNewBook() {
   setFormError(null);
   $('priceNote').hidden = true;
   $('isbnFlag').hidden = true;
+  showCareful(false);
   $('formHeading').textContent = 'Book details';
   $('addButton').textContent = 'Add to list';
   renderPhotos();
@@ -219,6 +220,7 @@ function renderPhotos() {
   $('fileInput').disabled = full || busy;
   // Photos loaded from a saved book only exist as links, so they cannot be sent for reading again.
   $('readButton').disabled = busy || photos.length === 0 || photos.some((photo) => !photo.dataUrl);
+  $('carefulButton').disabled = $('readButton').disabled;
 }
 
 /** Draw an image source onto the shared canvas, scaled so its long edge is at most `edge`. */
@@ -436,7 +438,7 @@ class ScanError extends Error {}
  * Reading sends every photo to the AI and stores nothing. Saving sends only the photos
  * not stored yet, in their final form, and records where each one ended up.
  */
-async function callScan(read) {
+async function callScan(read, careful = false) {
   const isbn = cleanIsbn(form.elements.isbn.value);
   const sending = read ? photos : photos.filter((photo) => !photo.url);
   let response;
@@ -448,6 +450,7 @@ async function callScan(read) {
         images: sending.map((photo) => ({ data: read ? photo.dataUrl : photo.listing ?? photo.dataUrl })),
         isbn_hint: isValidIsbn(isbn) ? isbn : null,
         read,
+        careful,
         store: !read,
       }),
     });
@@ -476,16 +479,22 @@ function setBusy(button, label) {
   renderPhotos();
 }
 
-async function readBook() {
-  const button = $('readButton');
+function showCareful(show) {
+  $('carefulButton').hidden = !show;
+  $('carefulHelp').hidden = !show;
+}
+
+async function readBook(careful) {
+  const button = careful ? $('carefulButton') : $('readButton');
   setBusy(button, 'Reading…');
   setBanner(null);
   $('readStatus').textContent = 'Reading the photos. This usually takes 10 to 20 seconds.';
   $('readStatus').hidden = false;
   try {
-    const result = await callScan(true);
+    const result = await callScan(true, careful);
     if (result.book) {
       applyReading(result.book);
+      showCareful(!careful);
       form.scrollIntoView({ behavior: 'smooth', block: 'start' });
     } else {
       setBanner('error', 'The photos were not read', result.read_error ?? 'Fill the details in by hand.');
@@ -685,7 +694,8 @@ $('fileInput').addEventListener('change', async (event) => {
   await addFiles([...event.target.files]);
   event.target.value = '';
 });
-$('readButton').addEventListener('click', readBook);
+$('readButton').addEventListener('click', () => readBook(false));
+$('carefulButton').addEventListener('click', () => readBook(true));
 form.addEventListener('submit', submitBook);
 form.addEventListener('input', (event) => {
   event.target.classList?.remove('filled');
