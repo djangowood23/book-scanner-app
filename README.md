@@ -39,7 +39,9 @@ carries public image links.
 directory to `netlify/functions`. The site's base directory in Netlify must be
 the repository root for this to take effect.
 
-Environment variables (scope must include Functions; redeploy after changing):
+Environment variables (scope must include Functions; redeploy after changing).
+On plans without scope selection, leave "Contains secret values" unticked so
+"All scopes" can be chosen:
 
 | Name | Required | Purpose |
 | --- | --- | --- |
