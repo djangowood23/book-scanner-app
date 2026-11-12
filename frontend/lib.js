@@ -59,7 +59,7 @@ export const FULL_HEADERS = [
   'list_flags', 'reprice_flags', 'stripped_title', 'ali_status',
   'product_id_type', 'asin1', 'asin2', 'asin3', 'p0', 'p1', 'p2', 'p3', 'p4',
   'cond_text', 'jcond_text', 'keywords', 'edition', 'signature', 'language', 'volume',
-  'image_2',
+  'image_2', 'image_3', 'image_4',
 ];
 
 // The shorter layout the first version of this app exported.
@@ -89,6 +89,8 @@ export function bookToRow(book) {
     release_date: book.release_date,
     image: images[0] ?? '',
     image_2: images[1] ?? '',
+    image_3: images[2] ?? '',
+    image_4: images[3] ?? '',
     media: book.media,
     price: book.price,
     condition: book.condition,
