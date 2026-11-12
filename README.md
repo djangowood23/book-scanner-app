@@ -20,6 +20,10 @@ The Art of Books (AOB).
    that device until it is cleared.
 5. **Export CSV for AOB** downloads `aob_export_<timestamp>.csv`.
 
+The model used for reading is chosen in the app's Settings under Quality:
+Best (Claude Opus 5.5, the default), Balanced (Claude Sonnet 5.5) or Cheapest
+(Claude Haiku 5.5).
+
 Photos are stored in Netlify Blobs when a book is added and served from `/img/<name>`, so the CSV
 carries public image links.
 
