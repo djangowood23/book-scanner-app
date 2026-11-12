@@ -15,3 +15,6 @@ Thumbs.db
 # IDE/Editor specific files (optional)
 # .vscode/
 # .idea/
+
+node_modules/
+.netlify/

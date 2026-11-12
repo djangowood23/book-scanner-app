@@ -1,154 +1,254 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Book Scanner</title>
-    <link rel="stylesheet" href="style.css">
-    <style>
-        /* Basic styling for helper buttons/links */
-        .field-helpers button, .field-helpers span { margin-left: 5px; cursor: pointer; color: blue; text-decoration: underline; background: none; border: none; padding: 0; font-size: 0.9em; }
-        /* Basic styling for form layout */
-        #bookDetailsForm div { margin-bottom: 10px; }
-        #bookDetailsForm label { display: inline-block; min-width: 150px; vertical-align: top; }
-        #bookDetailsForm input[type="text"],
-        #bookDetailsForm input[type="number"],
-        #bookDetailsForm select,
-        #bookDetailsForm textarea { width: calc(90% - 160px); /* Adjust width considering label */ box-sizing: border-box; }
-        #bookDetailsForm textarea { vertical-align: top; }
-        #bookDetailsForm input[type="checkbox"] { width: auto; margin-right: 5px;}
-        #bookDetailsForm input[readonly] { background-color: #eee; }
-         /* Styling for capture buttons */
-         #captureButton { padding: 10px; font-size: 1.1em; margin: 5px; display: block; } /* Make single button block */
-        /* Responsive adjustments */
-        @media (max-width: 600px) {
-            #bookDetailsForm label { min-width: 100px; }
-             #bookDetailsForm input[type="text"],
-             #bookDetailsForm input[type="number"],
-             #bookDetailsForm select,
-             #bookDetailsForm textarea { width: calc(100% - 110px); }
-             #bookDetailsForm input[style*="width"],
-             #bookDetailsForm textarea[style*="width"] { width: calc(100% - 110px) !important; } /* Override inline styles */
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f6f1e7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#17150f" media="(prefers-color-scheme: dark)">
+  <title>Book Scanner</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231f4d3a'/%3E%3Cpath d='M9 8h11a3 3 0 0 1 3 3v13H12a3 3 0 0 1-3-3z' fill='%23f6f1e7'/%3E%3Cpath d='M12 21h11v3H12a1.5 1.5 0 0 1 0-3z' fill='%23d9cfb8'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-    <h1>Book Scanner Camera</h1>
+<header class="topbar">
+  <h1>Book Scanner</h1>
+  <a class="count" href="#list" id="countLink"><span id="bookCount">0</span> in list</a>
+  <button type="button" class="icon-btn" id="settingsButton" aria-label="Settings">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10" /><circle cx="16" cy="7" r="2.2"/><circle cx="8" cy="17" r="2.2"/></svg>
+  </button>
+</header>
 
-    <video id="videoElement" autoplay playsinline></video>
+<main>
+  <section class="card capture" aria-labelledby="captureHeading">
+    <h2 id="captureHeading" class="visually-hidden">Photos</h2>
 
-    <button type="button" id="captureButton">Capture Photo</button>
-
-    <canvas id="canvasElement" style="display:none;"></canvas>
-
-    <h2>Snapshot:</h2>
-    <img id="snapshot" src="" alt="Captured image"/>
-
-    <hr>
-    <h2>Book Details</h2>
-    <div id="bookDetailsForm">
-        <div>
-            <label for="sku">SKU:</label>
-            <input type="text" id="sku" name="sku" maxlength="24">
-        </div>
-        <div>
-            <label for="title">Title:</label>
-            <input type="text" id="title" name="title">
-        </div>
-        <div>
-            <label for="author">Author:</label>
-            <input type="text" id="author" name="author">
-        </div>
-        <div>
-            <label for="isbn">ISBN:</label>
-            <input type="text" id="isbn" name="isbn">
-        </div>
-         <div>
-            <label for="condition">Condition:</label>
-            <select id="condition" name="condition">
-                <option value="11">New</option>
-                <option value="1">Like New</option>
-                <option value="2">Very Good</option>
-                <option value="3" selected>Good</option>
-                <option value="4">Acceptable</option>
-            </select>
-        </div>
-        <div>
-            <label for="condition_text">Condition Notes:</label>
-            <input type="text" id="condition_text" name="condition_text" maxlength="32"> </div>
-         <div>
-            <label for="price">Price:</label>
-            <input type="text" id="price" name="price">
-        </div>
-        <div>
-            <label for="qty">Quantity:</label>
-            <input type="number" id="qty" name="qty" value="1" min="1" step="1">
-        </div>
-        <div>
-            <label for="publisher">Publisher:</label>
-            <input type="text" id="publisher" name="publisher">
-        </div>
-         <div> <label for="signed_flag">Signed?</label>
-            <input type="checkbox" id="signed_flag" name="signed_flag">
-        </div>
-        <div> <label for="edition">Edition Details:</label>
-            <input type="text" id="edition" name="edition" maxlength="32" placeholder="e.g., 1st Edition">
-            <span class="field-helpers">
-                 <button type="button" id="btn1stEd">1st</button>
-            </span>
-        </div>
-         <div> <label for="language">Language:</label>
-            <input type="text" id="language" name="language" value="English">
-        </div>
-        <div> <label for="media">Media:</label>
-            <input type="text" id="media" name="media" placeholder="e.g., Paperback">
-            <span class="field-helpers">
-                <button type="button" id="btnMediaPB">PB</button>
-                <button type="button" id="btnMediaHC">HC</button>
-                <button type="button" id="btnMediaCD">CD</button>
-                <button type="button" id="btnMediaDVD">DVD</button>
-            </span>
-        </div>
-        <div>
-            <label for="notes">Notes (Desc/Feat):</label>
-            <textarea id="notes" name="notes" rows="3"></textarea>
-        </div>
-         <div>
-            <label for="release_date">Release Date:</label>
-            <input type="text" id="release_date" name="release_date" placeholder="YYYY-MM-DD">
-        </div>
-         <div>
-            <label for="location">Location (Shelf):</label>
-            <input type="text" id="location" name="location">
-        </div>
-        <div>
-            <label for="cost">Cost (Optional):</label>
-            <input type="number" id="cost" name="cost" step="0.01">
-        </div>
-        <div>
-            <label for="source">Source:</label>
-            <input type="text" id="source" name="source" maxlength="32">
-        </div>
-         <div>
-            <label for="image_url">Image URL:</label>
-            <input type="text" id="image_url" name="image_url" readonly>
-         </div>
-
-        <hr>
-        <button type="button" id="addBookButton" style="padding: 10px; margin-top: 15px; font-size: 1.1em;">Add Book to Session List</button>
-
-    </div> <div id="sessionBooksList" style="margin-top: 20px;">
-        <h2>Books Added This Session: <span id="bookCount">0</span></h2>
-        <ul id="booksUl"></ul>
+    <div class="viewfinder" id="viewfinder">
+      <video id="video" autoplay playsinline muted></video>
+      <div class="viewfinder-message" id="cameraMessage" hidden>
+        <p id="cameraMessageText"></p>
+        <button type="button" class="btn" id="retryCamera">Turn on camera</button>
+      </div>
+      <p class="viewfinder-hint" id="shotHint">Cover first</p>
+      <p class="isbn-flag" id="isbnFlag" hidden></p>
     </div>
 
-    <div id="exportSection" style="margin-top: 20px;">
-         <button type="button" id="exportCsvButton" style="padding: 10px; font-size: 1.1em;">Export List to CSV</button>
+    <div class="shutter-row">
+      <label class="btn ghost" for="fileInput">Library</label>
+      <input type="file" id="fileInput" accept="image/jpeg,image/png,image/webp" multiple hidden>
+      <button type="button" class="shutter" id="shutter" aria-label="Take photo"><span></span></button>
+      <span class="shot-count" id="shotCount">0 / 4</span>
     </div>
 
+    <ul class="thumbs" id="thumbs" aria-label="Photos of this book"></ul>
 
-    <script src="scanner.js"></script>
+    <button type="button" class="btn primary wide" id="readButton" disabled>Read book</button>
+    <p class="read-status" id="readStatus" role="status" hidden></p>
+  </section>
 
+  <form class="card details" id="bookForm" novalidate autocomplete="off">
+    <div class="card-head">
+      <h2 id="formHeading">Book details</h2>
+      <button type="button" class="link" id="resetButton">Start over</button>
+    </div>
+
+    <div class="banner" id="aiBanner" hidden></div>
+
+    <div class="field">
+      <label for="title">Title</label>
+      <input type="text" id="title" name="title">
+    </div>
+    <div class="field">
+      <label for="author">Author</label>
+      <input type="text" id="author" name="author">
+    </div>
+
+    <div class="row">
+      <div class="field">
+        <label for="isbn">ISBN</label>
+        <input type="text" id="isbn" name="isbn" inputmode="numeric">
+      </div>
+      <div class="field narrow">
+        <label for="release_date">Year</label>
+        <input type="text" id="release_date" name="release_date" inputmode="numeric" maxlength="10">
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="publisher">Publisher</label>
+      <input type="text" id="publisher" name="publisher">
+    </div>
+
+    <div class="field">
+      <label for="edition">Edition</label>
+      <input type="text" id="edition" name="edition" maxlength="32">
+      <div class="chips" data-for="edition">
+        <button type="button" data-value="First Edition">First Edition</button>
+        <button type="button" data-value="First Edition, First Printing">1st / 1st</button>
+        <button type="button" data-value="Book Club Edition">Book Club</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="media">Binding</label>
+      <input type="text" id="media" name="media">
+      <div class="chips" data-for="media">
+        <button type="button" data-value="Hardcover">Hardcover</button>
+        <button type="button" data-value="Paperback">Paperback</button>
+        <button type="button" data-value="Mass Market Paperback">Mass market</button>
+        <button type="button" data-value="Audio CD">CD</button>
+        <button type="button" data-value="DVD">DVD</button>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="field">
+        <label for="condition">Condition</label>
+        <select id="condition" name="condition"></select>
+      </div>
+      <div class="field check">
+        <label><input type="checkbox" id="signed" name="signed"> Signed</label>
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="cond_text">Condition notes</label>
+      <input type="text" id="cond_text" name="cond_text" maxlength="32">
+    </div>
+
+    <div class="row">
+      <div class="field">
+        <label for="price">Price</label>
+        <div class="money"><span>$</span><input type="text" id="price" name="price" inputmode="decimal"></div>
+      </div>
+      <div class="field narrow">
+        <label for="qty">Qty</label>
+        <input type="number" id="qty" name="qty" min="1" step="1" inputmode="numeric">
+      </div>
+    </div>
+    <p class="price-note" id="priceNote" hidden></p>
+
+    <div class="field">
+      <label for="notes">Description</label>
+      <textarea id="notes" name="notes" rows="3"></textarea>
+    </div>
+
+    <details class="more">
+      <summary>More fields</summary>
+      <div class="row">
+        <div class="field">
+          <label for="volume">Volume</label>
+          <input type="text" id="volume" name="volume">
+        </div>
+        <div class="field">
+          <label for="language">Language</label>
+          <input type="text" id="language" name="language">
+        </div>
+      </div>
+      <div class="row">
+        <div class="field">
+          <label for="asin">ASIN</label>
+          <input type="text" id="asin" name="asin" maxlength="10" autocapitalize="characters">
+        </div>
+        <div class="field">
+          <label for="cost">Cost</label>
+          <div class="money"><span>$</span><input type="text" id="cost" name="cost" inputmode="decimal"></div>
+        </div>
+      </div>
+      <div class="row">
+        <div class="field">
+          <label for="location">Shelf location</label>
+          <input type="text" id="location" name="location">
+        </div>
+        <div class="field">
+          <label for="source">Source</label>
+          <input type="text" id="source" name="source" maxlength="32">
+        </div>
+      </div>
+    </details>
+
+    <div class="field">
+      <label for="sku">SKU</label>
+      <input type="text" id="sku" name="sku" maxlength="24" autocapitalize="characters" placeholder="e.g. AB-0001, then it counts up">
+    </div>
+
+    <p class="form-error" id="formError" role="alert" hidden></p>
+    <button type="submit" class="btn primary wide" id="addButton">Add to list</button>
+  </form>
+
+  <section class="card" id="list" aria-labelledby="listHeading">
+    <div class="card-head">
+      <h2 id="listHeading">This batch</h2>
+      <button type="button" class="link danger" id="clearButton" hidden>Clear list</button>
+    </div>
+    <p class="empty" id="emptyList">Books you add appear here. They stay on this device until you clear the list.</p>
+    <ul class="books" id="books"></ul>
+    <button type="button" class="btn wide" id="exportButton" hidden>Export CSV for AOB</button>
+  </section>
+</main>
+
+<dialog id="settingsDialog" aria-labelledby="settingsHeading">
+  <form method="dialog" id="settingsForm">
+    <h2 id="settingsHeading">Settings</h2>
+
+    <div class="field">
+      <label for="setNextSku">Next SKU</label>
+      <input type="text" id="setNextSku" maxlength="24" autocapitalize="characters" placeholder="e.g. AB-0001">
+      <p class="help">Counts up by one for each book you add.</p>
+    </div>
+
+    <h3>Starting values for each book</h3>
+    <div class="row">
+      <div class="field">
+        <label for="setCondition">Condition</label>
+        <select id="setCondition"></select>
+      </div>
+      <div class="field narrow">
+        <label for="setPrice">Price</label>
+        <input type="text" id="setPrice" inputmode="decimal">
+      </div>
+    </div>
+    <div class="field">
+      <label for="setNotes">Description</label>
+      <textarea id="setNotes" rows="2"></textarea>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label for="setLocation">Shelf location</label>
+        <input type="text" id="setLocation">
+      </div>
+      <div class="field">
+        <label for="setSource">Source</label>
+        <input type="text" id="setSource" maxlength="32">
+      </div>
+    </div>
+
+    <h3>Export</h3>
+    <div class="field">
+      <label for="setLayout">CSV columns</label>
+      <select id="setLayout">
+        <option value="full">Full AOB file (50 columns)</option>
+        <option value="short">Short list (19 columns)</option>
+      </select>
+    </div>
+
+    <h3>Access</h3>
+    <div class="field">
+      <label for="setPasscode">Passcode</label>
+      <input type="password" id="setPasscode" autocomplete="off">
+      <p class="help">Only needed if a passcode was set for this site in Netlify.</p>
+    </div>
+
+    <div class="dialog-actions">
+      <button type="button" class="btn ghost" id="settingsCancel">Cancel</button>
+      <button type="submit" class="btn primary">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<div class="toast" id="toast" role="status" hidden></div>
+<canvas id="canvas" hidden></canvas>
+
+<script type="module" src="app.js"></script>
 </body>
 </html>
