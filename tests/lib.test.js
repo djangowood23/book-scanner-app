@@ -35,7 +35,7 @@ test('full CSV follows the AOB column order and quotes awkward cells', () => {
   assert.equal(header, FULL_HEADERS.join(','));
   const row = rest.join('\n');
   assert.ok(row.startsWith('AB-0001,A1,,,9780306406157,,"Dune, ""Deluxe""",Frank Herbert,Chilton,1965,https://example.com/img/a.jpg,Hardcover,45.00,2,"Line one\nLine two",1,n,n,'));
-  assert.ok(row.endsWith(',DJ chipped,,,First Edition,Signed,English,,https://example.com/img/b.jpg'));
+  assert.ok(row.endsWith(',DJ chipped,,,First Edition,Signed,English,,https://example.com/img/b.jpg,,'));
   // ISBN-13 with no ASIN is product id type 3.
   assert.ok(row.includes(',3,,,,'));
 });

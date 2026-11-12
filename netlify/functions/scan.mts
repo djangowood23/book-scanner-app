@@ -32,7 +32,7 @@ const BookSchema = z.object({
   volume: z.string().describe("Volume number or name for multi-volume works. Empty otherwise."),
   language: z.string().describe("Language of the text, e.g. 'English'."),
   media: z.enum(["Hardcover", "Paperback", "Mass Market Paperback", "Audio CD", "DVD", ""]).describe("Binding or media type. Empty if it cannot be told from the photos."),
-  signed: z.boolean().describe("True only if a signature or inscription by the author is visible."),
+  signed: z.boolean().describe("True only if a photo clearly shows the author's own signature. False for owner names, gift inscriptions, bookplates, printed facsimile signatures, or any signature you cannot tie to the author."),
   condition_notes: z.string().describe("Visible condition points in at most 32 characters, e.g. 'DJ chipped, spine sunned'. Empty if nothing notable is visible."),
   price_estimate: z.number().describe("Suggested used listing price in US dollars for this edition. 0 if the book could not be identified."),
   price_reasoning: z.string().describe("One sentence explaining the price: what drives it and how sure you are."),

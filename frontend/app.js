@@ -158,7 +158,7 @@ function applyReading(reading) {
     form.elements[name].value = value;
     form.elements[name].classList.add('filled');
   }
-  if (reading.signed) form.elements.signed.checked = true;
+  // Signed is left for the seller to tick: only they can verify an author's signature.
 
   if (reading.price_estimate > 0) {
     form.elements.price.value = reading.price_estimate.toFixed(2);
