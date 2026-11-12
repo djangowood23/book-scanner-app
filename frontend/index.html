@@ -44,8 +44,6 @@
     <p class="help" id="thumbHelp" hidden>The first photo is the main listing image. Tap a photo to straighten it onto a white background.</p>
 
     <button type="button" class="btn primary wide" id="readButton" disabled>Read book</button>
-    <button type="button" class="btn wide" id="carefulButton" hidden>Read again carefully</button>
-    <p class="help" id="carefulHelp" hidden>For books where edition and value matter. Uses the stronger AI model, which costs more per read.</p>
     <p class="read-status" id="readStatus" role="status" hidden></p>
   </section>
 
@@ -224,6 +222,17 @@
         <label for="setSource">Source</label>
         <input type="text" id="setSource" maxlength="32">
       </div>
+    </div>
+
+    <h3>AI reading</h3>
+    <div class="field">
+      <label for="setQuality">Quality</label>
+      <select id="setQuality">
+        <option value="best">Best (highest cost per book)</option>
+        <option value="balanced">Balanced (about half the cost)</option>
+        <option value="cheapest">Cheapest (a fraction of a cent)</option>
+      </select>
+      <p class="help">Better models judge editions and prices more reliably.</p>
     </div>
 
     <h3>Export</h3>

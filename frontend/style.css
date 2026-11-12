@@ -149,8 +149,6 @@ main {
   background: var(--accent); color: var(--accent-ink); font-size: .68rem; font-weight: 700; pointer-events: none;
 }
 #thumbHelp { margin-top: 8px; }
-#carefulButton { margin-top: 10px; }
-#carefulHelp { text-align: center; }
 
 .read-status { margin: 10px 0 0; color: var(--muted); font-size: .92rem; text-align: center; }
 
