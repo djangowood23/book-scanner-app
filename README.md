@@ -45,7 +45,7 @@ On plans without scope selection, leave "Contains secret values" unticked so
 
 | Name | Required | Purpose |
 | --- | --- | --- |
-| `ANTHROPIC_API_KEY` | yes | Lets the scan function call Claude. Without it the app still works for manual entry. |
+| `ANTHROPIC_API_KEY` (or `CLAUDE_ACCESS`) | yes | Lets the scan function call Claude. Without it the app still works for manual entry. |
 | `APP_PASSCODE` | no | If set, the app must be given the same passcode in Settings before it can read or save photos. Recommended, since the site is public and each read spends API credit. |
 
 ## Development

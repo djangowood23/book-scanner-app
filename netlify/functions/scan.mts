@@ -73,7 +73,9 @@ async function storePhotos(images: DecodedImage[], skip: boolean[], origin: stri
 }
 
 async function readBook(images: DecodedImage[], isbnHint: string | null): Promise<Book> {
-  const apiKey = Netlify.env.get("ANTHROPIC_API_KEY");
+  // CLAUDE_ACCESS is an alternative name for the same key, for when Netlify's
+  // form objects to a variable that looks like a secret.
+  const apiKey = (Netlify.env.get("ANTHROPIC_API_KEY") || Netlify.env.get("CLAUDE_ACCESS") || "").trim();
   if (!apiKey) {
     throw new ReadError("AI reading is not set up yet: add ANTHROPIC_API_KEY to this site's environment variables in Netlify and redeploy.");
   }

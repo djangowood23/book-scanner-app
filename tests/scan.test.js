@@ -50,3 +50,13 @@ test('skips storage when store is false', async () => {
   assert.equal(body.storage_error, null);
   assert.deepEqual(body.image_urls, [null]);
 });
+
+test('accepts the key under the alternative variable name', async () => {
+  env.CLAUDE_ACCESS = '  ';
+  try {
+    const body = await (await post({ images: [{ data: PIXEL }], store: false })).json();
+    assert.match(body.read_error, /ANTHROPIC_API_KEY/); // blank still counts as missing
+  } finally {
+    delete env.CLAUDE_ACCESS;
+  }
+});
