@@ -41,6 +41,7 @@
     </div>
 
     <ul class="thumbs" id="thumbs" aria-label="Photos of this book"></ul>
+    <p class="help" id="thumbHelp" hidden>The first photo is the main listing image. Tap a photo to straighten it onto a white background.</p>
 
     <button type="button" class="btn primary wide" id="readButton" disabled>Read book</button>
     <p class="read-status" id="readStatus" role="status" hidden></p>
@@ -244,6 +245,27 @@
       <button type="submit" class="btn primary">Save</button>
     </div>
   </form>
+</dialog>
+
+<dialog id="cropDialog" aria-labelledby="cropHeading">
+  <h2 id="cropHeading">Listing image</h2>
+  <p class="help">Drag the four corners to the edges of the book. It is straightened and placed on a white background.</p>
+  <div class="crop-wrap">
+    <div class="crop-stage" id="cropStage">
+      <img id="cropImage" alt="Photo being cropped">
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><polygon id="cropShape"/></svg>
+      <button type="button" class="handle" data-corner="0" aria-label="Top left corner"></button>
+      <button type="button" class="handle" data-corner="1" aria-label="Top right corner"></button>
+      <button type="button" class="handle" data-corner="2" aria-label="Bottom right corner"></button>
+      <button type="button" class="handle" data-corner="3" aria-label="Bottom left corner"></button>
+    </div>
+  </div>
+  <div class="dialog-actions">
+    <button type="button" class="link" id="cropOriginal">Use original photo</button>
+    <span class="spacer"></span>
+    <button type="button" class="btn ghost" id="cropCancel">Cancel</button>
+    <button type="button" class="btn primary" id="cropApply">Apply</button>
+  </div>
 </dialog>
 
 <div class="toast" id="toast" role="status" hidden></div>

@@ -1,7 +1,11 @@
-import { CONDITIONS, buildCsv, cleanIsbn, csvFilename, isValidIsbn, nextSku, parseSku } from './lib.js';
+import {
+  CONDITIONS, DEFAULT_CORNERS, buildCsv, cleanIsbn, csvFilename, isValidIsbn, listingSize, nextSku, parseSku,
+  quadSize, validCorners, warpQuad,
+} from './lib.js';
 
 const MAX_PHOTOS = 4;
 const MAX_EDGE = 1600; // long edge in pixels: plenty for reading print, small enough to upload quickly
+const FULL_EDGE = 2400; // sharper copy kept on the device for making the listing image
 const HINTS = ['Cover first', 'Now the copyright page', 'Title page or back cover', 'One more if it helps', 'Four photos is the limit'];
 
 const $ = (id) => document.getElementById(id);
@@ -46,7 +50,11 @@ let books = load('bookscanner.books', []);
 
 // ---------- the book being worked on ----------
 
-/** @type {{dataUrl: string|null, url: string|null}[]} */
+/**
+ * dataUrl: copy sent for reading. full: sharper copy for cropping. listing: the straightened
+ * white-background version, when one has been made. url: where it is stored once the book is added.
+ * @type {{dataUrl: string|null, full: string|null, listing: string|null, corners: number[][]|null, url: string|null}[]}
+ */
 let photos = [];
 let editingId = null;
 let busy = false;
@@ -157,6 +165,7 @@ function applyReading(reading) {
     $('priceNote').hidden = false;
   }
   syncChips();
+  useCoverCorners(reading);
 
   if (!reading.title && !reading.isbn) {
     setBanner('warn', 'Could not identify this book', reading.needs || 'Try a clearer photo of the cover or title page.');
@@ -175,45 +184,64 @@ function renderPhotos() {
   list.replaceChildren();
   photos.forEach((photo, index) => {
     const li = document.createElement('li');
+    li.classList.toggle('white', Boolean(photo.listing));
     const img = document.createElement('img');
-    img.src = photo.dataUrl ?? photo.url;
+    img.src = photo.listing ?? photo.dataUrl ?? photo.url;
     img.alt = `Photo ${index + 1}`;
+    let face = img;
+    if (photo.full) {
+      face = document.createElement('button');
+      face.type = 'button';
+      face.className = 'open';
+      face.setAttribute('aria-label', `Crop photo ${index + 1} onto a white background`);
+      face.addEventListener('click', () => openCrop(photo));
+      face.append(img);
+    }
+    if (index === 0) {
+      const tag = document.createElement('span');
+      tag.className = 'tag';
+      tag.textContent = 'Main';
+      li.append(tag);
+    }
     const remove = document.createElement('button');
     remove.type = 'button';
     remove.textContent = '×';
     remove.setAttribute('aria-label', `Remove photo ${index + 1}`);
     remove.addEventListener('click', () => { photos.splice(index, 1); renderPhotos(); });
-    li.append(img, remove);
+    li.append(face, remove);
     list.append(li);
   });
   const full = photos.length >= MAX_PHOTOS;
   $('shotCount').textContent = `${photos.length} / ${MAX_PHOTOS}`;
   $('shotHint').textContent = HINTS[photos.length];
+  $('thumbHelp').hidden = !photos.some((photo) => photo.full);
   $('shutter').disabled = full || !cameraOn() || busy;
   $('fileInput').disabled = full || busy;
   // Photos loaded from a saved book only exist as links, so they cannot be sent for reading again.
   $('readButton').disabled = busy || photos.length === 0 || photos.some((photo) => !photo.dataUrl);
 }
 
-/** Draw an image source onto the shared canvas, scaled so its long edge is at most MAX_EDGE. */
-function drawScaled(source, width, height) {
-  const scale = Math.min(1, MAX_EDGE / Math.max(width, height));
+/** Draw an image source onto the shared canvas, scaled so its long edge is at most `edge`. */
+function drawScaled(source, width, height, edge, quality) {
+  const scale = Math.min(1, edge / Math.max(width, height));
   canvas.width = Math.round(width * scale);
   canvas.height = Math.round(height * scale);
   canvas.getContext('2d').drawImage(source, 0, 0, canvas.width, canvas.height);
-  return canvas.toDataURL('image/jpeg', 0.82);
+  return canvas.toDataURL('image/jpeg', quality);
 }
 
-async function addPhoto(dataUrl) {
+async function addPhoto(source, width, height) {
   if (photos.length >= MAX_PHOTOS) return;
-  photos.push({ dataUrl, url: null });
+  const full = drawScaled(source, width, height, FULL_EDGE, 0.92);
+  const dataUrl = drawScaled(source, width, height, MAX_EDGE, 0.82);
+  photos.push({ dataUrl, full, listing: null, corners: null, url: null });
   renderPhotos();
   await detectBarcode(canvas);
 }
 
 async function takePhoto() {
   if (!video.videoWidth) { toast('The camera is still starting.'); return; }
-  await addPhoto(drawScaled(video, video.videoWidth, video.videoHeight));
+  await addPhoto(video, video.videoWidth, video.videoHeight);
 }
 
 async function addFiles(files) {
@@ -221,13 +249,119 @@ async function addFiles(files) {
     if (photos.length >= MAX_PHOTOS) { toast(`Only ${MAX_PHOTOS} photos per book.`); break; }
     try {
       const bitmap = await createImageBitmap(file);
-      await addPhoto(drawScaled(bitmap, bitmap.width, bitmap.height));
+      await addPhoto(bitmap, bitmap.width, bitmap.height);
       bitmap.close?.();
     } catch {
       toast(`Could not open ${file.name}.`);
     }
   }
 }
+
+// ---------- listing image ----------
+
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+
+/** Straighten the outlined book out of a photo and centre it on a white canvas. */
+async function makeListing(photo, corners) {
+  const img = await loadImage(photo.full);
+  const source = document.createElement('canvas');
+  source.width = img.naturalWidth;
+  source.height = img.naturalHeight;
+  const sourceCtx = source.getContext('2d', { willReadFrequently: true });
+  sourceCtx.drawImage(img, 0, 0);
+  const px = corners.map(([x, y]) => [x * source.width, y * source.height]);
+  const book = quadSize(px);
+  const size = listingSize(book.width, book.height);
+  const pixels = warpQuad(sourceCtx.getImageData(0, 0, source.width, source.height), px, size.innerW, size.innerH);
+
+  const out = document.createElement('canvas');
+  out.width = size.width;
+  out.height = size.height;
+  const outCtx = out.getContext('2d');
+  outCtx.fillStyle = '#ffffff';
+  outCtx.fillRect(0, 0, out.width, out.height);
+  outCtx.putImageData(new ImageData(pixels, size.innerW, size.innerH), size.pad, size.pad);
+  photo.corners = corners;
+  photo.listing = out.toDataURL('image/jpeg', 0.9);
+}
+
+/** After a reading, cut out the cover the AI located and make it the main image. */
+async function useCoverCorners(reading) {
+  const photo = photos[reading.cover_photo - 1];
+  const c = reading.cover_corners;
+  if (!photo?.full || photo.listing || !c) return;
+  const corners = [c.top_left, c.top_right, c.bottom_right, c.bottom_left].map((p) => [p.x, p.y]);
+  if (!validCorners(corners)) return;
+  try {
+    await makeListing(photo, corners);
+    photos = [photo, ...photos.filter((other) => other !== photo)];
+    renderPhotos();
+  } catch {
+    // The original photo is still there; the seller can crop by hand.
+  }
+}
+
+let cropPhoto = null;
+let cropCorners = [];
+
+function drawCrop() {
+  $('cropShape').setAttribute('points', cropCorners.map(([x, y]) => `${x * 100},${y * 100}`).join(' '));
+  for (const handle of document.querySelectorAll('#cropStage .handle')) {
+    const [x, y] = cropCorners[handle.dataset.corner];
+    handle.style.left = `${x * 100}%`;
+    handle.style.top = `${y * 100}%`;
+  }
+  $('cropApply').disabled = !validCorners(cropCorners);
+}
+
+function openCrop(photo) {
+  if (busy) return;
+  cropPhoto = photo;
+  cropCorners = (photo.corners ?? DEFAULT_CORNERS).map((point) => [...point]);
+  $('cropImage').src = photo.full;
+  $('cropOriginal').hidden = !photo.listing;
+  drawCrop();
+  $('cropDialog').showModal();
+}
+
+for (const handle of document.querySelectorAll('#cropStage .handle')) {
+  const move = (event) => {
+    if (!handle.hasPointerCapture(event.pointerId)) return;
+    const box = $('cropImage').getBoundingClientRect();
+    cropCorners[handle.dataset.corner] = [
+      Math.min(Math.max((event.clientX - box.left) / box.width, 0), 1),
+      Math.min(Math.max((event.clientY - box.top) / box.height, 0), 1),
+    ];
+    drawCrop();
+  };
+  handle.addEventListener('pointerdown', (event) => { handle.setPointerCapture(event.pointerId); event.preventDefault(); });
+  handle.addEventListener('pointermove', move);
+}
+
+$('cropApply').addEventListener('click', async () => {
+  try {
+    await makeListing(cropPhoto, cropCorners);
+  } catch {
+    toast('That crop could not be made. Try adjusting the corners.');
+    return;
+  }
+  $('cropDialog').close();
+  renderPhotos();
+});
+$('cropOriginal').addEventListener('click', () => {
+  cropPhoto.listing = null;
+  cropPhoto.corners = null;
+  $('cropDialog').close();
+  renderPhotos();
+});
+$('cropCancel').addEventListener('click', () => $('cropDialog').close());
 
 // ---------- camera + barcode ----------
 
@@ -298,17 +432,23 @@ setInterval(() => {
 
 class ScanError extends Error {}
 
+/**
+ * Reading sends every photo to the AI and stores nothing. Saving sends only the photos
+ * not stored yet, in their final form, and records where each one ended up.
+ */
 async function callScan(read) {
   const isbn = cleanIsbn(form.elements.isbn.value);
+  const sending = read ? photos : photos.filter((photo) => !photo.url);
   let response;
   try {
     response = await fetch('/api/scan', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-app-passcode': settings.passcode },
       body: JSON.stringify({
-        images: photos.map((photo) => ({ data: photo.dataUrl, stored: Boolean(photo.url) })),
+        images: sending.map((photo) => ({ data: read ? photo.dataUrl : photo.listing ?? photo.dataUrl })),
         isbn_hint: isValidIsbn(isbn) ? isbn : null,
         read,
+        store: !read,
       }),
     });
   } catch {
@@ -323,7 +463,7 @@ async function callScan(read) {
   if (!response.ok || !body) {
     throw new ScanError(body?.message ?? `The server returned an error (${response.status}). Try again.`);
   }
-  body.image_urls.forEach((url, index) => { if (url) photos[index].url = url; });
+  body.image_urls.forEach((url, index) => { if (url) sending[index].url = url; });
   return body;
 }
 
@@ -418,7 +558,7 @@ function editBook(id) {
   const book = books.find((other) => other.id === id);
   if (!book) return;
   editingId = id;
-  photos = (book.images ?? []).map((url) => ({ dataUrl: null, url }));
+  photos = (book.images ?? []).map((url) => ({ dataUrl: null, full: null, listing: null, corners: null, url }));
   writeForm(book);
   setBanner(null);
   setFormError(null);

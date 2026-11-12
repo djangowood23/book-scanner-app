@@ -12,11 +12,15 @@ The Art of Books (AOB).
 2. **Read book** sends the photos to a Netlify Function, which asks Claude for
    the title, author, ISBN, publisher, year, edition, binding, visible condition
    points and a suggested price. The price is an estimate, not market data.
-3. Review the form, then **Add to list**. The list is kept in the browser on
+3. The reading also locates the front cover, which is straightened and placed
+   on a white background as the main listing image (at least 1000 px on the
+   long side). Tap any photo to adjust the corners by hand or go back to the
+   original.
+4. Review the form, then **Add to list**. The list is kept in the browser on
    that device until it is cleared.
-4. **Export CSV for AOB** downloads `aob_export_<timestamp>.csv`.
+5. **Export CSV for AOB** downloads `aob_export_<timestamp>.csv`.
 
-Photos are stored in Netlify Blobs and served from `/img/<name>`, so the CSV
+Photos are stored in Netlify Blobs when a book is added and served from `/img/<name>`, so the CSV
 carries public image links.
 
 ## Layout
@@ -24,8 +28,8 @@ carries public image links.
 | Path | What it is |
 | --- | --- |
 | `frontend/` | The static site (no build step) |
-| `frontend/lib.js` | SKU, ISBN and CSV helpers |
-| `netlify/functions/scan.mts` | `POST /api/scan`: stores photos, reads them with Claude |
+| `frontend/lib.js` | SKU, ISBN, CSV and image-straightening helpers |
+| `netlify/functions/scan.mts` | `POST /api/scan`: reads photos with Claude, or stores them |
 | `netlify/functions/image.mts` | `GET /img/:name`: serves a stored photo |
 | `tests/` | `npm test` |
 

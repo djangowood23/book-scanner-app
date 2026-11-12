@@ -49,3 +49,54 @@ test('short CSV matches the original export', () => {
 test('export filename carries a timestamp', () => {
   assert.equal(csvFilename(new Date('2026-11-12T03:04:05Z')), 'aob_export_20261112030405.csv');
 });
+
+import { DEFAULT_CORNERS, listingSize, quadSize, rectToQuad, validCorners, warpQuad } from '../frontend/lib.js';
+
+test('corner validation', () => {
+  assert.ok(validCorners(DEFAULT_CORNERS));
+  assert.ok(validCorners([[0.2, 0.1], [0.8, 0.15], [0.85, 0.9], [0.15, 0.85]]));
+  assert.ok(!validCorners([[0.1, 0.1], [0.1, 0.9], [0.9, 0.9], [0.9, 0.1]])); // counter-clockwise
+  assert.ok(!validCorners([[0.1, 0.1], [0.9, 0.9], [0.9, 0.1], [0.1, 0.9]])); // crossed
+  assert.ok(!validCorners([[0.4, 0.4], [0.5, 0.4], [0.5, 0.5], [0.4, 0.5]])); // too small
+  assert.ok(!validCorners([[0, 0], [1.2, 0], [1, 1], [0, 1]])); // outside the photo
+  assert.ok(!validCorners(null));
+});
+
+test('projective transform lands rectangle corners on the quadrilateral', () => {
+  const quad = [[120, 80], [900, 140], [860, 1100], [90, 1040]];
+  const [a, b, c, d, e, f, g, h] = rectToQuad(600, 800, quad);
+  const map = (x, y) => [(a * x + b * y + c) / (g * x + h * y + 1), (d * x + e * y + f) / (g * x + h * y + 1)];
+  [[0, 0], [600, 0], [600, 800], [0, 800]].forEach(([x, y], i) => {
+    const [u, v] = map(x, y);
+    assert.ok(Math.abs(u - quad[i][0]) < 1e-6 && Math.abs(v - quad[i][1]) < 1e-6);
+  });
+  const size = quadSize(quad);
+  assert.ok(Math.abs(size.width - Math.hypot(780, 60)) < 1e-9);
+});
+
+test('warping a full-frame rectangle reproduces the image', () => {
+  const width = 4, height = 3;
+  const data = new Uint8ClampedArray(width * height * 4);
+  for (let i = 0; i < width * height; i++) data.set([i * 20, 255 - i * 20, i, 255], i * 4);
+  const out = warpQuad({ data, width, height }, [[0, 0], [4, 0], [4, 3], [0, 3]], 4, 3);
+  assert.deepEqual([...out], [...data]);
+});
+
+test('warping picks out the chosen region', () => {
+  // 4x4 image, black except a white 2x2 block in the middle.
+  const data = new Uint8ClampedArray(64);
+  for (let i = 0; i < 16; i++) data[i * 4 + 3] = 255;
+  for (const i of [5, 6, 9, 10]) data.set([255, 255, 255, 255], i * 4);
+  const out = warpQuad({ data, width: 4, height: 4 }, [[1, 1], [3, 1], [3, 3], [1, 3]], 2, 2);
+  assert.deepEqual([...out], Array(4).fill([255, 255, 255, 255]).flat());
+});
+
+test('listing image meets the marketplace size rules', () => {
+  const small = listingSize(450, 700); // upscaled so the long side reaches 1000
+  assert.equal(Math.max(small.width, small.height), 1000);
+  assert.ok(small.innerH / small.height >= 0.85);
+  const big = listingSize(3000, 4000);
+  assert.ok(Math.max(big.width, big.height) <= 2000);
+  const mid = listingSize(900, 1300);
+  assert.equal(mid.innerH, 1300);
+});

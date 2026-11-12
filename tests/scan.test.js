@@ -44,3 +44,9 @@ test('enforces the passcode when one is configured', async () => {
     delete env.APP_PASSCODE;
   }
 });
+
+test('skips storage when store is false', async () => {
+  const body = await (await post({ images: [{ data: PIXEL }], read: false, store: false })).json();
+  assert.equal(body.storage_error, null);
+  assert.deepEqual(body.image_urls, [null]);
+});
