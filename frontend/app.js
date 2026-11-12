@@ -26,6 +26,7 @@ const DEFAULT_SETTINGS = {
   source: '',
   layout: 'full',
   quality: 'best',
+  minPrice: '20',
   passcode: '',
 };
 
@@ -168,7 +169,11 @@ function applyReading(reading) {
   syncChips();
   useCoverCorners(reading);
 
-  if (!reading.title && !reading.isbn) {
+  const minimum = Number(settings.minPrice);
+  if (minimum > 0 && reading.price_estimate > 0 && reading.price_estimate < minimum) {
+    setBanner('warn', `Below your $${minimum} minimum`,
+      `Estimated at $${reading.price_estimate.toFixed(2)}. Tap Start over to skip this book, or raise the price to list it anyway.`);
+  } else if (!reading.title && !reading.isbn) {
     setBanner('warn', 'Could not identify this book', reading.needs || 'Try a clearer photo of the cover or title page.');
   } else if (reading.confidence === 'high' && !reading.needs) {
     setBanner('ok', 'Filled in from your photos', 'Check the highlighted fields before adding.');
@@ -522,6 +527,10 @@ async function submitBook(event) {
   setFormError(problem);
   if (problem) return;
 
+  const minimum = Number(settings.minPrice);
+  if (minimum > 0 && Number(book.price) < minimum
+    && !confirm(`$${book.price} is under your $${minimum} minimum. Add it anyway?`)) return;
+
   if (photos.some((photo) => !photo.url)) {
     const button = $('addButton');
     setBusy(button, 'Saving photos…');
@@ -651,6 +660,7 @@ function openSettings() {
   $('setSource').value = settings.source;
   $('setLayout').value = settings.layout;
   $('setQuality').value = settings.quality;
+  $('setMinPrice').value = settings.minPrice;
   $('setPasscode').value = settings.passcode;
   if (!$('settingsDialog').open) $('settingsDialog').showModal();
 }
@@ -666,6 +676,7 @@ function saveSettings() {
     source: $('setSource').value.trim(),
     layout: $('setLayout').value,
     quality: $('setQuality').value,
+    minPrice: $('setMinPrice').value.trim().replace(/^\$/, ''),
     passcode: $('setPasscode').value,
   };
   save('bookscanner.settings', settings);
