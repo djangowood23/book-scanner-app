@@ -4,3 +4,5 @@
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
+  # ssh2 loads optional native add-ons at runtime, which the bundler cannot inline.
+  external_node_modules = ["ssh2", "ssh2-sftp-client"]

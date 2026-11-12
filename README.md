@@ -44,7 +44,7 @@ handwriting is flagged with the closest real SKUs. Saved shelves export as
 | `netlify/functions/scan.mts` | `POST /api/scan`: reads photos with Claude, or stores them |
 | `frontend/shelve.html`, `shelve.js` | The shelving page |
 | `netlify/functions/skus.mts` | `POST /api/skus`: reads SKU slips or a location label |
-| `netlify/functions/send.mts` | `POST /api/send`: delivers an export file to AOB over FTP |
+| `netlify/functions/send.mts` | `POST /api/send`: delivers an export file to AOB over SFTP |
 | `netlify/functions/image.mts` | `GET /img/:name`: serves a stored photo |
 | `tests/` | `npm test` |
 
@@ -62,7 +62,7 @@ On plans without scope selection, leave "Contains secret values" unticked so
 | --- | --- | --- |
 | `ANTHROPIC_API_KEY` (or `CLAUDE_ACCESS`) | yes | Lets the scan function call Claude. Without it the app still works for manual entry. |
 | `APP_PASSCODE` | no | If set, the app must be given the same passcode in Settings before it can read or save photos. Recommended, since the site is public and each read spends API credit. |
-| `AOB_FTP_USER`, `AOB_FTP_PASSWORD` | no | The AOB FTP login. With these and `APP_PASSCODE` set, Send to AOB delivers files straight to AOB. `AOB_FTP_HOST` (default `ftp.theartofbooks.com`) and `AOB_FTP_DIR` (default the main directory) are optional. |
+| `AOB_FTP_USER`, `AOB_FTP_PASSWORD` | no | The AOB SFTP login. With these and `APP_PASSCODE` set, Send to AOB delivers files straight to AOB. `AOB_FTP_HOST` (default `ftp.theartofbooks.com`) and `AOB_FTP_PORT` (default 22) and `AOB_FTP_DIR` (default: an inventory folder if the account has one, otherwise the main directory) are optional. |
 
 ## Development
 
