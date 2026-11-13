@@ -79,7 +79,7 @@ function renderSlips() {
     const note = document.createElement('p');
     note.className = 'note';
     if (match.status === 'ok') note.textContent = match.title || 'In your inventory';
-    else if (match.status === 'unverified') note.textContent = slip.seenTitle || 'Not checked: no inventory loaded';
+    else if (match.status === 'unverified') note.textContent = slip.unsure ? 'Handwriting unclear, please check' : '';
     else note.textContent = match.suggestions.length ? 'Not in your inventory. Did you mean:' : 'Not in your inventory. Check the slip.';
     if (match.status === 'ok' && slip.unsure) note.textContent += ' (handwriting unclear, please check)';
 
@@ -90,6 +90,7 @@ function renderSlips() {
     remove.setAttribute('aria-label', `Remove ${slip.sku}`);
     remove.addEventListener('click', () => { slips.splice(index, 1); persistShelf(); });
 
+    note.hidden = !note.textContent;
     li.append(input, remove, note);
 
     if (match.suggestions.length) {
@@ -321,7 +322,7 @@ function renderInventory() {
   const count = Object.keys(inventory).length;
   $('inventoryStatus').textContent = count
     ? `${count.toLocaleString()} SKUs loaded. Each SKU you read is checked against this list.`
-    : 'Load your AOB inventory export once and every SKU you read is checked against it, so misread handwriting gets caught.';
+    : 'Shelving works without this. If you load your AOB inventory export, each SKU you read is also checked against it.';
 }
 
 async function loadInventory(file) {
