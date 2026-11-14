@@ -61,6 +61,8 @@ let books = load('bookscanner.books', []);
 let photos = [];
 let editingId = null;
 let busy = false;
+/** True once a reading came back under the minimum price, so Start over needs no question. */
+let belowMinimum = false;
 
 // ---------- small UI helpers ----------
 
@@ -140,6 +142,7 @@ function startNewBook() {
   setBanner(null);
   setFormError(null);
   $('priceNote').hidden = true;
+  belowMinimum = false;
   $('signedNote').hidden = true;
   $('aiNotes').value = '';
   $('isbnFlag').hidden = true;
@@ -180,6 +183,7 @@ function applyReading(reading) {
 
   const minimum = Number(settings.minPrice);
   if (minimum > 0 && reading.price_estimate > 0 && reading.price_estimate < minimum) {
+    belowMinimum = true;
     setBanner('warn', `Below your $${minimum} minimum`,
       `Estimated at $${reading.price_estimate.toFixed(2)}. Tap Start over to skip this book, or raise the price to list it anyway.`);
   } else if (!reading.title && !reading.isbn) {
@@ -417,6 +421,40 @@ function stopCamera() {
   video.srcObject = null;
 }
 
+/**
+ * iPhones freeze the camera picture when a system dialog opens and do not always bring
+ * it back. Resume it, or start it afresh if the stream itself has died.
+ */
+let reviving = false;
+async function reviveCamera() {
+  if (document.hidden || reviving) return;
+  reviving = true;
+  try {
+    await reviveCameraNow();
+  } finally {
+    reviving = false;
+  }
+}
+
+async function reviveCameraNow() {
+  const track = video.srcObject?.getVideoTracks()[0];
+  if (!track || track.readyState !== 'live') {
+    stopCamera();
+    await startCamera();
+  } else if (video.paused) {
+    try { await video.play(); } catch { stopCamera(); await startCamera(); }
+  }
+  renderPhotos();
+}
+
+/** A yes/no question that leaves the camera working afterwards. */
+function ask(message) {
+  const answer = confirm(message);
+  setTimeout(reviveCamera, 100);
+  return answer;
+}
+video.addEventListener('pause', () => setTimeout(reviveCamera, 100));
+
 // Barcode reading is built into some browsers (Chrome on Android). Elsewhere the AI reads the ISBN from the photo.
 let detector = null;
 if ('BarcodeDetector' in window) {
@@ -539,7 +577,7 @@ async function submitBook(event) {
 
   const minimum = Number(settings.minPrice);
   if (minimum > 0 && Number(book.price) < minimum
-    && !confirm(`$${book.price} is under your $${minimum} minimum. Add it anyway?`)) return;
+    && !ask(`$${book.price} is under your $${minimum} minimum. Add it anyway?`)) return;
 
   if (photos.some((photo) => !photo.url)) {
     const button = $('addButton');
@@ -593,7 +631,7 @@ function editBook(id) {
 
 function removeBook(id) {
   const book = books.find((other) => other.id === id);
-  if (!book || !confirm(`Remove ${book.title || book.sku} from the list?`)) return;
+  if (!book || !ask(`Remove ${book.title || book.sku} from the list?`)) return;
   books = books.filter((other) => other.id !== id);
   save('bookscanner.books', books);
   if (editingId === id) startNewBook(); else renderBooks();
@@ -667,7 +705,7 @@ async function sendBooks() {
     return;
   }
   toast(`Sent ${books.length} ${books.length === 1 ? 'book' : 'books'} to AOB`);
-  if (confirm('Sent to AOB. It usually shows up there within a few minutes.\n\nClear this list now?')) {
+  if (ask('Sent to AOB. It usually shows up there within a few minutes.\n\nClear this list now?')) {
     books = [];
     save('bookscanner.books', books);
     startNewBook();
@@ -721,7 +759,7 @@ function printFromPhone() {
 }
 
 function clearList() {
-  if (!confirm(`Clear all ${books.length} books from this list? Export first if you still need them.`)) return;
+  if (!ask(`Clear all ${books.length} books from this list? Export first if you still need them.`)) return;
   books = [];
   save('bookscanner.books', books);
   startNewBook();
@@ -789,7 +827,8 @@ form.addEventListener('input', (event) => {
 });
 $('resetButton').addEventListener('click', () => {
   const dirty = photos.length > 0 || form.elements.title.value || form.elements.isbn.value;
-  if (!dirty || confirm('Discard this book and start over?')) startNewBook();
+  if (!dirty || belowMinimum || ask('Discard this book and start over?')) startNewBook();
+  reviveCamera();
 });
 for (const chip of document.querySelectorAll('.chips button')) {
   chip.addEventListener('click', () => {
