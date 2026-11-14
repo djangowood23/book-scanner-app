@@ -13,7 +13,7 @@ export async function sendToAob(filename, content, passcode) {
   } catch {
     return { sent: false, message: 'No connection to the server. Check your signal and try again.' };
   }
-  if (response.status === 401) return { sent: false, message: 'Wrong or missing passcode. Enter it in the scanner\'s Settings.' };
+  if (response.status === 401) return { sent: false, needsPasscode: true, message: 'Wrong or missing passcode.' };
   try {
     const body = await response.json();
     return { sent: body.sent === true, message: body.message ?? null };

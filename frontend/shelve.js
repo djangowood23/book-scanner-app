@@ -48,6 +48,15 @@ function setShelfError(message) {
   $('shelfError').hidden = !message;
 }
 
+/** Ask for the app passcode on this page and remember it, so there is no trip to Settings. */
+function askPasscode() {
+  const entered = prompt('Enter the app passcode');
+  if (!entered) return false;
+  settings.passcode = entered.trim();
+  save('bookscanner.settings', { ...load('bookscanner.settings', {}), passcode: settings.passcode });
+  return true;
+}
+
 // ---------- the shelf being worked on ----------
 
 function addSlip(sku, seenTitle = '', unsure = false) {
@@ -176,7 +185,10 @@ async function sendLocations() {
   $('savedError').hidden = true;
   button.disabled = true;
   button.classList.add('busy');
-  const result = await sendToAob(locationsFilename(), buildLocationsCsv(saved), settings.passcode);
+  let result = await sendToAob(locationsFilename(), buildLocationsCsv(saved), settings.passcode);
+  if (result.needsPasscode && askPasscode()) {
+    result = await sendToAob(locationsFilename(), buildLocationsCsv(saved), settings.passcode);
+  }
   button.disabled = false;
   button.classList.remove('busy');
   if (!result.sent) {
@@ -250,7 +262,7 @@ function frame() {
 
 // ---------- reading ----------
 
-async function callRead(image, kind) {
+async function callRead(image, kind, retried = false) {
   let response;
   try {
     response = await fetch('/api/skus', {
@@ -261,7 +273,10 @@ async function callRead(image, kind) {
   } catch {
     throw new Error('No connection to the server. Check your signal and try again.');
   }
-  if (response.status === 401) throw new Error('This site needs a passcode. Enter it in the scanner\'s Settings, then come back.');
+  if (response.status === 401) {
+    if (!retried && askPasscode()) return callRead(image, kind, true);
+    throw new Error('That passcode was not accepted. Tap the shutter to try again.');
+  }
   let body = null;
   try { body = await response.json(); } catch { /* handled below */ }
   if (!response.ok || !body) throw new Error(body?.message ?? `The server returned an error (${response.status}). Try again.`);

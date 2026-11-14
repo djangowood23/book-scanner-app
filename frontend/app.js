@@ -651,6 +651,7 @@ async function sendBooks() {
   setBusy(button, 'Sending…');
   const result = await sendToAob(csvFilename(), buildCsv(books, settings.layout), settings.passcode);
   setBusy(button, null);
+  if (result.needsPasscode) { openSettings(); result.message = 'Enter the passcode in Settings, then tap Send again.'; }
   if (!result.sent) {
     $('listError').textContent = result.message ?? 'The file could not be sent.';
     $('listError').hidden = false;
