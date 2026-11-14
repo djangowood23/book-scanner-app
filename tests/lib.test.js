@@ -136,3 +136,23 @@ test('locations file', () => {
   assert.equal(buildLocationsCsv([{ sku: 'K-5405', location: 'Tub 12' }, { sku: 'T-1', location: 'Shelf A, row 2' }]),
     'sku,location\nK-5405,Tub 12\nT-1,"Shelf A, row 2"');
 });
+
+import { buildSlipsPdf } from '../frontend/lib.js';
+
+test('slips PDF is well formed', () => {
+  const books = Array.from({ length: 12 }, (_, i) => ({ sku: `K-${5400 + i}`, title: 'Encounters with Paradise (Views of Hawaii) — café' }));
+  books.push({ sku: 'LONGPREFIX-000123-EXTRA', title: '', isbn: '9780441478125' });
+  const pdf = buildSlipsPdf(books);
+  assert.ok(pdf.startsWith('%PDF-1.4\n') && pdf.endsWith('%%EOF\n'));
+  assert.ok(pdf.includes('/Count 2'), 'thirteen slips need two pages');
+  assert.ok(pdf.includes('(K-5400) Tj') && pdf.includes('(ISBN 9780441478125) Tj'));
+  assert.ok(pdf.includes('\\(Views of'), 'parentheses are escaped');
+  assert.ok(![...pdf].some((ch) => ch.charCodeAt(0) > 255), 'every character is one byte');
+  // The cross-reference table must point at the real object positions.
+  const xref = Number(/startxref\n(\d+)\n/.exec(pdf)[1]);
+  assert.ok(pdf.slice(xref).startsWith('xref\n'));
+  const entries = pdf.slice(xref).split('\n').slice(3).filter((line) => / n $/.test(line));
+  entries.forEach((line, i) => assert.ok(pdf.slice(Number(line.slice(0, 10))).startsWith(`${i + 1} 0 obj\n`)));
+  // Declared stream lengths must match.
+  for (const m of pdf.matchAll(/<< \/Length (\d+) >>\nstream\n([\s\S]*?)\nendstream/g)) assert.equal(m[2].length, Number(m[1]));
+});

@@ -1,5 +1,5 @@
 import {
-  CONDITIONS, DEFAULT_CORNERS, buildCsv, cleanIsbn, csvFilename, isValidIsbn, listingSize, nextSku, parseSku,
+  CONDITIONS, DEFAULT_CORNERS, buildCsv, buildSlipsPdf, cleanIsbn, csvFilename, isValidIsbn, listingSize, nextSku, parseSku,
   quadSize, validCorners, warpQuad,
 } from './lib.js';
 import { sendToAob } from './send.js';
@@ -674,8 +674,35 @@ async function sendBooks() {
   }
 }
 
-/** Lay out one cut-out slip per book, SKU at the top so it shows above the pages, and print. */
-function printSlips() {
+/**
+ * Print the slips. If the print helper is running on the seller's computer, the sheet
+ * goes there and prints by itself; otherwise the phone's own print screen opens.
+ */
+async function printSlips() {
+  const button = $('printButton');
+  setBusy(button, 'Sending to printer…');
+  let result = { queued: false, message: null };
+  try {
+    const response = await fetch('/api/print', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-app-passcode': settings.passcode },
+      body: JSON.stringify({ pdf: btoa(buildSlipsPdf(books)) }),
+    });
+    if (response.status === 401) result.message = 'Enter the passcode in Settings to print through your computer.';
+    else result = await response.json();
+  } catch {
+    // No connection: fall through to printing from the phone.
+  }
+  setBusy(button, null);
+  if (result.queued) {
+    toast(`Sent ${books.length} ${books.length === 1 ? 'slip' : 'slips'} to your printer`);
+    return;
+  }
+  if (result.message) toast(result.message);
+  printFromPhone();
+}
+
+function printFromPhone() {
   const sheet = $('printSheet');
   sheet.replaceChildren();
   for (const book of books) {

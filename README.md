@@ -35,6 +35,22 @@ each SKU is checked against a loaded AOB inventory export so misread
 handwriting is flagged with the closest real SKUs. Saved shelves export as
 `aob_locations_<timestamp>.csv` with two columns, `sku` and `location`.
 
+## Printing SKU slips
+
+**Print SKU slips** makes a PDF of cut-out slips, ten to a US Letter page. If
+the print helper is installed on a Mac, the sheet is queued on the site and the
+helper prints it on that Mac's default printer within about a minute; otherwise
+the phone's own print screen opens.
+
+Install the helper on the Mac (it asks for the app passcode):
+
+```
+bash <(curl -fsSL https://sage-biscochitos-e77053.netlify.app/install-print-helper.sh)
+```
+
+Remove it with the same command followed by `remove`. Printing through the
+helper needs `APP_PASSCODE` to be set.
+
 ## Layout
 
 | Path | What it is |
@@ -45,6 +61,8 @@ handwriting is flagged with the closest real SKUs. Saved shelves export as
 | `frontend/shelve.html`, `shelve.js` | The shelving page |
 | `netlify/functions/skus.mts` | `POST /api/skus`: reads SKU slips or a location label |
 | `netlify/functions/send.mts` | `POST /api/send`: delivers an export file to AOB over SFTP |
+| `netlify/functions/print.mts` | `POST /api/print` queues a slip sheet; `POST /api/print/next` hands it to the print helper |
+| `frontend/install-print-helper.sh` | Installs the print helper on a Mac |
 | `netlify/functions/image.mts` | `GET /img/:name`: serves a stored photo |
 | `tests/` | `npm test` |
 
