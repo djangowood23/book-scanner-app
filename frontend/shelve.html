@@ -22,66 +22,61 @@
 
 <main>
   <section class="card" aria-labelledby="locationHeading">
-    <div class="card-head">
-      <h2 id="locationHeading">Shelf or tub</h2>
+    <h2 id="locationHeading" class="visually-hidden">Shelf or tub</h2>
+    <div class="field">
+      <label for="location">Shelf or tub</label>
+      <input type="text" id="location" autocomplete="off" autocapitalize="characters" placeholder="e.g. TUB 12">
     </div>
-    <div class="row">
-      <div class="field">
-        <label for="location">Location</label>
-        <input type="text" id="location" autocomplete="off" autocapitalize="characters" placeholder="e.g. TUB 12">
-      </div>
-      <div class="field check">
-        <button type="button" class="btn" id="readLocation">Read label</button>
-      </div>
+
+    <div class="field">
+      <label for="spoken">Say or type the SKUs</label>
+      <textarea id="spoken" rows="2" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" placeholder="L 1233, K 5405 quantity 3"></textarea>
+      <p class="help">Tap the microphone on the keyboard and say them one after another. Say "quantity 3" after a SKU for more than one copy, or "undo" to drop the last one.</p>
     </div>
-    <p class="help">Type it, or point the camera at the label and tap Read label.</p>
+    <p class="preview" id="preview" hidden></p>
+    <button type="button" class="btn primary wide" id="addSpoken">Add</button>
   </section>
 
-  <section class="card capture" aria-labelledby="cameraHeading">
-    <h2 id="cameraHeading" class="visually-hidden">Camera</h2>
-    <div class="viewfinder" id="viewfinder">
-      <video id="video" autoplay playsinline muted></video>
-      <div class="viewfinder-message" id="cameraMessage" hidden>
-        <p id="cameraMessageText"></p>
-        <button type="button" class="btn" id="retryCamera">Turn on camera</button>
-      </div>
-      <p class="viewfinder-hint">SKU slips in view</p>
-    </div>
-    <div class="shutter-row">
-      <label class="btn ghost" for="fileInput">Library</label>
-      <input type="file" id="fileInput" accept="image/jpeg,image/png,image/webp" hidden>
-      <button type="button" class="shutter" id="shutter" aria-label="Read the SKU slips in view"><span></span></button>
+  <section class="card" aria-labelledby="lotHeading">
+    <div class="card-head">
+      <h2 id="lotHeading">This lot</h2>
       <span class="shot-count" id="slipCount">0 books</span>
     </div>
-    <p class="read-status" id="readStatus" role="status" hidden></p>
-    <div class="banner error" id="readError" hidden></div>
+    <p class="empty" id="emptyShelf">SKUs you add appear here. Check them, then save the lot.</p>
+    <ul class="slips" id="slips"></ul>
+    <p class="form-error" id="shelfError" role="alert" hidden></p>
+    <button type="button" class="btn primary wide" id="saveShelf">Save lot</button>
   </section>
 
-  <section class="card" aria-labelledby="shelfHeading">
-    <div class="card-head">
-      <h2 id="shelfHeading">On this shelf</h2>
+  <details class="card camera-option" id="cameraOption">
+    <summary>Use the camera instead</summary>
+    <div class="capture">
+      <div class="viewfinder" id="viewfinder">
+        <video id="video" autoplay playsinline muted></video>
+        <div class="viewfinder-message" id="cameraMessage" hidden>
+          <p id="cameraMessageText"></p>
+          <button type="button" class="btn" id="retryCamera">Turn on camera</button>
+        </div>
+        <p class="viewfinder-hint">SKU slips in view</p>
+      </div>
+      <div class="shutter-row">
+        <label class="btn ghost" for="fileInput">Library</label>
+        <input type="file" id="fileInput" accept="image/jpeg,image/png,image/webp" hidden>
+        <button type="button" class="shutter" id="shutter" aria-label="Read the SKU slips in view"><span></span></button>
+        <button type="button" class="btn ghost" id="readLocation">Read label</button>
+      </div>
+      <p class="help">The shutter reads every SKU slip in view. Read label fills in the shelf or tub from its label. Both need a connection.</p>
+      <p class="read-status" id="readStatus" role="status" hidden></p>
+      <div class="banner error" id="readError" hidden></div>
     </div>
-    <p class="empty" id="emptyShelf">SKUs you photograph appear here. Check them, then save the shelf.</p>
-    <ul class="slips" id="slips"></ul>
-    <form class="row add-row" id="addForm">
-      <div class="field">
-        <label for="manualSku">Add a SKU by hand</label>
-        <input type="text" id="manualSku" autocomplete="off" autocapitalize="characters" maxlength="24">
-      </div>
-      <div class="field check">
-        <button type="submit" class="btn">Add</button>
-      </div>
-    </form>
-    <p class="form-error" id="shelfError" role="alert" hidden></p>
-    <button type="button" class="btn primary wide" id="saveShelf">Save shelf</button>
-  </section>
+  </details>
 
   <section class="card" aria-labelledby="savedHeading">
     <div class="card-head">
       <h2 id="savedHeading">Saved</h2>
       <button type="button" class="link danger" id="clearSaved" hidden>Clear</button>
     </div>
-    <p class="empty" id="emptySaved">Saved shelves collect here until you export them.</p>
+    <p class="empty" id="emptySaved">Saved lots collect here until you send them to AOB.</p>
     <ul class="books" id="savedList"></ul>
     <p class="form-error" id="savedError" role="alert" hidden></p>
     <button type="button" class="btn primary wide" id="sendButton" hidden>Send locations to AOB</button>
