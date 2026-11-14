@@ -24,6 +24,7 @@ const BookSchema = z.object({
   volume: z.string().describe("Volume number or name for multi-volume works. Empty otherwise."),
   language: z.string().describe("Language of the text, e.g. 'English'."),
   media: z.enum(["Hardcover", "Paperback", "Mass Market Paperback", "Audio CD", "DVD", ""]).describe("Binding or media type. Empty if it cannot be told from the photos."),
+  inscription: z.string().describe("Any handwriting visible in the photos: a signature, inscription, owner's name or bookplate. Say what it is and where, in one short sentence, e.g. 'Signature on the title page, matches the author's name' or 'Gift inscription on the front endpaper'. Empty if none is visible."),
   signed: z.boolean().describe("True only if a photo clearly shows the author's own signature. False for owner names, gift inscriptions, bookplates, printed facsimile signatures, or any signature you cannot tie to the author."),
   condition_notes: z.string().describe("Visible condition points in at most 32 characters, e.g. 'DJ chipped, spine sunned'. Empty if nothing notable is visible."),
   price_estimate: z.number().describe("Suggested used listing price in US dollars for this edition. 0 if the book could not be identified."),
@@ -46,6 +47,8 @@ const SYSTEM = `You catalogue used and rare books for an online bookseller. You 
 Read what is printed in the photos first. Use your own knowledge of the book to fill gaps such as the publisher or year only when you are sure which book and edition this is, and never to override what the photos show.
 
 Edition matters most for value. Work it out from the copyright page when there is one: an explicit edition statement, the number line (the lowest number present is the printing), and the dates. If no copyright page is shown, leave the edition empty unless the cover itself states it, and say in "needs" that a copyright page photo would confirm it.
+
+Report any handwriting you can see, such as a signature, inscription, owner's name or bookplate, and where it is. Mark the book as signed only when the signature is clearly the author's own; the seller verifies it either way.
 
 Only report an ISBN you can actually read in the photos, from the barcode area or the copyright page. Do not recall one from memory. If the seller supplied a scanned barcode ISBN, treat it as correct.
 
@@ -71,12 +74,14 @@ async function storePhotos(images: DecodedImage[], skip: boolean[], origin: stri
   );
 }
 
-async function readBook(images: DecodedImage[], isbnHint: string | null, quality: Quality): Promise<Book> {
+async function readBook(images: DecodedImage[], isbnHint: string | null, sellerNotes: string, quality: Quality): Promise<Book> {
   const client = makeClient();
 
-  const instruction = isbnHint
-    ? `Catalogue this book. The seller scanned this ISBN from the barcode: ${isbnHint}.`
-    : "Catalogue this book.";
+  let instruction = "Catalogue this book.";
+  if (isbnHint) instruction += ` The seller scanned this ISBN from the barcode: ${isbnHint}.`;
+  if (sellerNotes) {
+    instruction += `\n\nThe seller, who has the book in hand, adds these notes. Take them as true where they describe the book, and let them inform the edition, condition and price:\n<seller_notes>\n${sellerNotes}\n</seller_notes>`;
+  }
 
   const response = await client.beta.messages.parse({
     model: MODELS[quality],
@@ -120,7 +125,7 @@ export default async (req: Request): Promise<Response> => {
   const denied = checkPasscode(req);
   if (denied) return denied;
 
-  let payload: { images?: unknown; isbn_hint?: unknown; read?: unknown; store?: unknown; quality?: unknown };
+  let payload: { images?: unknown; isbn_hint?: unknown; notes?: unknown; read?: unknown; store?: unknown; quality?: unknown };
   try {
     payload = await req.json();
   } catch {
@@ -145,12 +150,13 @@ export default async (req: Request): Promise<Response> => {
   const isbnHint = isIsbn(payload.isbn_hint) ? payload.isbn_hint.toUpperCase() : null;
   const wantRead = payload.read !== false;
   const wantStore = payload.store !== false;
+  const sellerNotes = typeof payload.notes === "string" ? payload.notes.trim().slice(0, 1000) : "";
   const quality = parseQuality(payload.quality);
   const origin = new URL(req.url).origin;
 
   const [stored, read] = await Promise.allSettled([
     wantStore ? storePhotos(images, skip, origin) : Promise.resolve(images.map(() => null)),
-    wantRead ? readBook(images, isbnHint, quality) : Promise.resolve(null),
+    wantRead ? readBook(images, isbnHint, sellerNotes, quality) : Promise.resolve(null),
   ]);
 
   if (stored.status === "rejected") console.error("Photo storage failed", stored.reason);

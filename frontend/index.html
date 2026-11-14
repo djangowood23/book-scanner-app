@@ -44,6 +44,10 @@
     <ul class="thumbs" id="thumbs" aria-label="Photos of this book"></ul>
     <p class="help" id="thumbHelp" hidden>The first photo is the main listing image. Tap a photo to straighten it onto a white background.</p>
 
+    <div class="field ai-notes">
+      <label for="aiNotes">Notes for the AI (optional)</label>
+      <textarea id="aiNotes" rows="2" maxlength="1000" placeholder="Anything the photos don't show: signed on the title page, ex-library, no dust jacket…"></textarea>
+    </div>
     <button type="button" class="btn primary wide" id="readButton" disabled>Read book</button>
     <p class="read-status" id="readStatus" role="status" hidden></p>
   </section>
@@ -112,6 +116,7 @@
         <label><input type="checkbox" id="signed" name="signed"> Signed</label>
       </div>
     </div>
+    <p class="price-note" id="signedNote" hidden></p>
 
     <div class="field">
       <label for="cond_text">Condition notes</label>

@@ -140,6 +140,8 @@ function startNewBook() {
   setBanner(null);
   setFormError(null);
   $('priceNote').hidden = true;
+  $('signedNote').hidden = true;
+  $('aiNotes').value = '';
   $('isbnFlag').hidden = true;
   $('formHeading').textContent = 'Book details';
   $('addButton').textContent = 'Add to list';
@@ -159,7 +161,13 @@ function applyReading(reading) {
     form.elements[name].value = value;
     form.elements[name].classList.add('filled');
   }
-  // Signed is left for the seller to tick: only they can verify an author's signature.
+  // The AI reports what handwriting it sees and ticks Signed only for a clear author
+  // signature. The note stays visible so the seller can verify it against the book.
+  if (reading.signed) form.elements.signed.checked = true;
+  if (reading.inscription) {
+    $('signedNote').textContent = `Seen in the photos: ${reading.inscription}${reading.signed ? ' Ticked as signed; untick if it is not the author.' : ''}`;
+    $('signedNote').hidden = false;
+  }
 
   if (reading.price_estimate > 0) {
     form.elements.price.value = reading.price_estimate.toFixed(2);
@@ -454,6 +462,7 @@ async function callScan(read) {
       body: JSON.stringify({
         images: sending.map((photo) => ({ data: read ? photo.dataUrl : photo.listing ?? photo.dataUrl })),
         isbn_hint: isValidIsbn(isbn) ? isbn : null,
+        notes: $('aiNotes').value.trim(),
         read,
         quality: settings.quality,
         store: !read,
