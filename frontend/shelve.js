@@ -210,34 +210,120 @@ function addSpoken() {
 
 // ---------- saved lots ----------
 
+/** Locations whose rows are open for editing, kept across re-renders. */
+const openLocations = new Set();
+
+function persistSaved() {
+  save('bookscanner.locations', saved);
+  renderSaved();
+}
+
+/**
+ * The saved lots, grouped by location. Tapping a location opens it, where its name,
+ * and each book's SKU and quantity, can be corrected or removed before sending.
+ */
 function renderSaved() {
   const list = $('savedList');
   list.replaceChildren();
-  const counts = new Map();
-  for (const { location } of saved) counts.set(location, (counts.get(location) ?? 0) + 1);
-  for (const [location, count] of counts) {
+  const groups = new Map();
+  for (const entry of saved) {
+    if (!groups.has(entry.location)) groups.set(entry.location, []);
+    groups.get(entry.location).push(entry);
+  }
+  for (const [location, entries] of groups) {
     const li = document.createElement('li');
-    li.className = 'saved-row';
-    const info = document.createElement('div');
+    li.className = 'saved-group';
+    const details = document.createElement('details');
+    details.open = openLocations.has(location);
+    details.addEventListener('toggle', () => {
+      if (details.open) openLocations.add(location); else openLocations.delete(location);
+    });
+
+    const summary = document.createElement('summary');
     const name = document.createElement('span');
     name.className = 'title';
     name.textContent = location;
     const meta = document.createElement('span');
     meta.className = 'meta';
-    meta.textContent = plural(count, 'book');
-    info.append(name, meta);
-    const remove = document.createElement('button');
-    remove.type = 'button';
-    remove.className = 'remove';
-    remove.textContent = '×';
-    remove.setAttribute('aria-label', `Remove everything saved for ${location}`);
-    remove.addEventListener('click', () => {
-      if (!ask(`Remove the ${plural(count, 'book')} saved for ${location}?`)) return;
-      saved = saved.filter((entry) => entry.location !== location);
-      save('bookscanner.locations', saved);
-      renderSaved();
+    meta.textContent = `${plural(entries.length, 'book')} · tap to edit`;
+    summary.append(name, meta);
+
+    const rename = document.createElement('div');
+    rename.className = 'field';
+    const renameLabel = document.createElement('label');
+    renameLabel.textContent = 'Shelf or tub';
+    const renameInput = document.createElement('input');
+    renameInput.type = 'text';
+    renameInput.value = location;
+    renameInput.autocapitalize = 'characters';
+    renameInput.setAttribute('aria-label', `Rename ${location}`);
+    renameInput.addEventListener('change', () => {
+      const next = renameInput.value.trim();
+      if (!next || next === location) { renameInput.value = location; return; }
+      for (const entry of entries) entry.location = next;
+      openLocations.delete(location);
+      openLocations.add(next);
+      persistSaved();
     });
-    li.append(info, remove);
+    rename.append(renameLabel, renameInput);
+
+    const rows = document.createElement('ul');
+    rows.className = 'slips';
+    for (const entry of entries) {
+      const row = document.createElement('li');
+      const sku = document.createElement('input');
+      sku.type = 'text';
+      sku.value = entry.sku;
+      sku.maxLength = 24;
+      sku.autocapitalize = 'characters';
+      sku.setAttribute('aria-label', `SKU in ${location}`);
+      sku.addEventListener('change', () => {
+        const next = sku.value.trim();
+        if (!next) saved = saved.filter((other) => other !== entry);
+        else if (saved.some((other) => other !== entry && other.sku === next)) {
+          toast(`${next} is already saved`);
+          sku.value = entry.sku;
+          return;
+        } else entry.sku = next;
+        persistSaved();
+      });
+      const qty = document.createElement('input');
+      qty.type = 'number';
+      qty.className = 'qty';
+      qty.min = '1';
+      qty.inputMode = 'numeric';
+      qty.value = String(entry.qty ?? 1);
+      qty.setAttribute('aria-label', `Quantity of ${entry.sku}`);
+      qty.addEventListener('change', () => {
+        entry.qty = Math.max(1, parseInt(qty.value, 10) || 1);
+        persistSaved();
+      });
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'remove';
+      remove.textContent = '×';
+      remove.setAttribute('aria-label', `Remove ${entry.sku}`);
+      remove.addEventListener('click', () => {
+        saved = saved.filter((other) => other !== entry);
+        persistSaved();
+      });
+      row.append(sku, qty, remove);
+      rows.append(row);
+    }
+
+    const removeAll = document.createElement('button');
+    removeAll.type = 'button';
+    removeAll.className = 'link danger';
+    removeAll.textContent = `Remove all of ${location}`;
+    removeAll.addEventListener('click', () => {
+      if (!ask(`Remove the ${plural(entries.length, 'book')} saved for ${location}?`)) return;
+      saved = saved.filter((entry) => entry.location !== location);
+      openLocations.delete(location);
+      persistSaved();
+    });
+
+    details.append(summary, rename, rows, removeAll);
+    li.append(details);
     list.append(li);
   }
   const any = saved.length > 0;

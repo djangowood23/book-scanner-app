@@ -332,3 +332,10 @@ dialog h2 { margin-bottom: 16px; }
 .camera-option[open] > summary { margin-bottom: 14px; }
 .camera-option .shutter-row > :last-child { justify-self: end; }
 .books li.saved-row .title, .books li.saved-row .meta { display: block; }
+
+.books li.saved-group { display: block; }
+.saved-group summary { cursor: pointer; list-style: none; padding: 2px 0; }
+.saved-group summary::-webkit-details-marker { display: none; }
+.saved-group .title, .saved-group .meta { display: block; white-space: normal; }
+.saved-group details[open] summary { margin-bottom: 12px; }
+.saved-group .slips { margin-bottom: 8px; }
