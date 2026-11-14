@@ -7,14 +7,14 @@ export function parseSku(text) {
   return { prefix: match[1], number: parseInt(match[2], 10), pad: match[2].length };
 }
 
-export function formatSku({ prefix, number, pad }) {
+export function joinSku({ prefix, number, pad }) {
   return prefix + String(number).padStart(pad, '0');
 }
 
 /** The SKU that follows `text` in sequence, or '' when it has no trailing number. */
 export function nextSku(text) {
   const parsed = parseSku(text);
-  return parsed ? formatSku({ ...parsed, number: parsed.number + 1 }) : '';
+  return parsed ? joinSku({ ...parsed, number: parsed.number + 1 }) : '';
 }
 
 export function cleanIsbn(text) {
@@ -298,9 +298,9 @@ export function matchSku(sku, inventory, seenTitle = '') {
 
 /** A file AOB can import to set each book's location and mark it in stock, touching nothing else. */
 export function buildLocationsCsv(assignments) {
-  // A book just placed on a shelf is in stock, so its quantity is set to 1 as well.
+  // A book just placed on a shelf is in stock: quantity 1 unless the seller said otherwise.
   const lines = ['sku,location,qty'];
-  for (const { sku, location } of assignments) lines.push(`${escapeCsvCell(sku)},${escapeCsvCell(location)},1`);
+  for (const { sku, location, qty } of assignments) lines.push(`${escapeCsvCell(sku)},${escapeCsvCell(location)},${qty >= 1 ? qty : 1}`);
   return lines.join('\n');
 }
 
@@ -377,4 +377,115 @@ export function buildSlipsPdf(books) {
   for (const offset of offsets) pdf += `${String(offset).padStart(10, '0')} 00000 n \n`;
   pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
   return pdf;
+}
+
+// ---------- shelving by voice: turn dictated text into SKUs ----------
+
+const SPOKEN_LETTERS = {
+  ay: 'a', bee: 'b', be: 'b', see: 'c', sea: 'c', dee: 'd', eff: 'f', gee: 'g', aitch: 'h', eye: 'i',
+  jay: 'j', kay: 'k', el: 'l', ell: 'l', em: 'm', en: 'n', pee: 'p', pea: 'p', queue: 'q', cue: 'q',
+  are: 'r', ess: 's', tee: 't', tea: 't', you: 'u', vee: 'v', ex: 'x', why: 'y', zee: 'z', zed: 'z',
+};
+const SPOKEN_ONES = {
+  zero: 0, oh: 0, one: 1, won: 1, two: 2, to: 2, too: 2, three: 3, four: 4, for: 4, five: 5,
+  six: 6, seven: 7, eight: 8, ate: 8, nine: 9,
+};
+const SPOKEN_TEENS = {
+  ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16,
+  seventeen: 17, eighteen: 18, nineteen: 19,
+};
+const SPOKEN_TENS = { twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90 };
+
+/** Put a dash between the prefix and the number when none was given: L1233 becomes L-1233. */
+export function formatSku(text, lower = false) {
+  let sku = String(text ?? '').replace(/[^A-Za-z0-9-]/g, '').replace(/^-+|-+$/g, '');
+  sku = lower ? sku.toLowerCase() : sku.toUpperCase();
+  if (!sku.includes('-')) sku = sku.replace(/^(.*[A-Za-z])(\d+)$/, '$1-$2');
+  return sku;
+}
+
+/**
+ * Read dictated or typed text as a run of SKUs.
+ *
+ *   "L 1233 K5405"            -> L-1233, K-5405
+ *   "T 3290 quantity 3"       -> T-3290 with quantity 3
+ *   "lowercase g 8425"        -> g-8425
+ *   "R A 11 dash 1 dash 5"    -> RA11-1-5
+ *   "... undo"                -> drops the SKU before it
+ *
+ * Returns { entries: [{ sku, qty }], undo } where undo counts "undo" commands that had
+ * nothing in this text to remove, so the caller can remove earlier entries.
+ */
+export function parseSpokenSkus(text) {
+  let words = String(text ?? '').toLowerCase()
+    .replace(/\b(?:scratch that|delete last|remove last|undo)\b/g, ' #undo ')
+    .replace(/\b(?:quantity|quantities|qty|count|times)\b/g, ' #qty ')
+    .replace(/\b(?:lower ?case|small)\b/g, ' #lower ')
+    .replace(/\bdouble (?:you|u)\b/g, ' w ')
+    .replace(/\b(?:dash|hyphen|minus)\b/g, ' - ')
+    .replace(/\b(?:next|and|then|comma|period|new line)\b|[,.;:\n]/g, ' | ')
+    .split(/\s+/).filter(Boolean);
+
+  // Spelled-out letters and numbers become characters; "twenty three" becomes 23.
+  const tokens = [];
+  for (let i = 0; i < words.length; i++) {
+    const word = words[i];
+    if (word in SPOKEN_TENS) {
+      const ones = SPOKEN_ONES[words[i + 1]];
+      if (ones > 0) { tokens.push(String(SPOKEN_TENS[word] + ones)); i++; } else tokens.push(String(SPOKEN_TENS[word]));
+    } else if (word in SPOKEN_TEENS) tokens.push(String(SPOKEN_TEENS[word]));
+    else if (word in SPOKEN_ONES) tokens.push(String(SPOKEN_ONES[word]));
+    else if (word in SPOKEN_LETTERS) tokens.push(SPOKEN_LETTERS[word]);
+    else tokens.push(word);
+  }
+
+  const entries = [];
+  let undo = 0;
+  let current = '';
+  let lower = false;
+  const complete = () => /[a-z]/.test(current) && /\d$/.test(current);
+  const flush = () => {
+    const sku = formatSku(current, lower);
+    if (/[A-Za-z]/.test(sku) && /\d/.test(sku) && sku.length <= 24) entries.push({ sku, qty: 1 });
+    current = '';
+    lower = false;
+  };
+
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (token === '|') flush();
+    else if (token === '#undo') {
+      flush();
+      if (entries.length) entries.pop(); else undo++;
+    } else if (token === '#qty') {
+      flush();
+      const qty = parseInt(tokens[i + 1], 10);
+      if (qty >= 1 && qty <= 999) { if (entries.length) entries[entries.length - 1].qty = qty; i++; }
+    } else if (token === '#lower') {
+      flush();
+      lower = true;
+    } else if (/^x\d{1,3}$/.test(token) && (complete() || (!current && entries.length))) {
+      flush();
+      entries[entries.length - 1].qty = parseInt(token.slice(1), 10); // "x3"
+    } else if (/^[a-z]{4,}$/.test(token)) {
+      flush(); // an ordinary word, not part of a SKU
+    } else if (/^[a-z0-9-]+$/.test(token)) {
+      // A letter arriving after a finished prefix-and-number starts the next SKU.
+      if (complete() && /^[a-z]/.test(token)) flush();
+      current += token;
+    }
+  }
+  flush();
+  return { entries, undo };
+}
+
+/**
+ * Speech carries no upper or lower case. Given the inventory, return the real SKU when
+ * exactly one differs from `sku` only by case; otherwise return `sku` unchanged.
+ */
+export function resolveSkuCase(sku, inventory) {
+  if (!inventory || Object.hasOwn(inventory, sku)) return sku;
+  const lower = sku.toLowerCase();
+  const matches = Object.keys(inventory).filter((other) => other.toLowerCase() === lower);
+  return matches.length === 1 ? matches[0] : sku;
 }

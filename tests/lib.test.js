@@ -133,8 +133,8 @@ test('SKU matching against the inventory', () => {
 });
 
 test('locations file', () => {
-  assert.equal(buildLocationsCsv([{ sku: 'K-5405', location: 'Tub 12' }, { sku: 'T-1', location: 'Shelf A, row 2' }]),
-    'sku,location,qty\nK-5405,Tub 12,1\nT-1,"Shelf A, row 2",1');
+  assert.equal(buildLocationsCsv([{ sku: 'K-5405', location: 'Tub 12' }, { sku: 'T-1', location: 'Shelf A, row 2', qty: 3 }]),
+    'sku,location,qty\nK-5405,Tub 12,1\nT-1,"Shelf A, row 2",3');
 });
 
 import { buildSlipsPdf } from '../frontend/lib.js';
@@ -155,4 +155,40 @@ test('slips PDF is well formed', () => {
   entries.forEach((line, i) => assert.ok(pdf.slice(Number(line.slice(0, 10))).startsWith(`${i + 1} 0 obj\n`)));
   // Declared stream lengths must match.
   for (const m of pdf.matchAll(/<< \/Length (\d+) >>\nstream\n([\s\S]*?)\nendstream/g)) assert.equal(m[2].length, Number(m[1]));
+});
+
+import { formatSku, parseSpokenSkus, resolveSkuCase } from '../frontend/lib.js';
+
+test('dash goes between prefix and number', () => {
+  assert.equal(formatSku('L1233'), 'L-1233');
+  assert.equal(formatSku('k-5405'), 'K-5405');
+  assert.equal(formatSku('3ha023'), '3HA-023');
+  assert.equal(formatSku('ra11-1-5'), 'RA11-1-5');
+  assert.equal(formatSku('G8425', true), 'g-8425');
+});
+
+test('dictated SKUs', () => {
+  const skus = (text) => parseSpokenSkus(text).entries.map((entry) => (entry.qty === 1 ? entry.sku : `${entry.sku} x${entry.qty}`));
+  assert.deepEqual(skus('L1233'), ['L-1233']);
+  assert.deepEqual(skus('L 1233 K 5405'), ['L-1233', 'K-5405']);
+  assert.deepEqual(skus('l 12 33, k5405. T-3290'), ['L-1233', 'K-5405', 'T-3290']);
+  assert.deepEqual(skus('el one two three three kay 5405'), ['L-1233', 'K-5405']);
+  assert.deepEqual(skus('L twelve thirty three'), ['L-1233']);
+  assert.deepEqual(skus('T 3290 quantity 3 K 5405'), ['T-3290 x3', 'K-5405']);
+  assert.deepEqual(skus('T3290 qty three next K5405 x2'), ['T-3290 x3', 'K-5405 x2']);
+  assert.deepEqual(skus('lowercase g 8425 G 5560'), ['g-8425', 'G-5560']);
+  assert.deepEqual(skus('R A 11 dash 1 dash 5 next 3 H A 0 2 3'), ['RA11-1-5', '3HA-023']);
+  assert.deepEqual(skus('L 1233 K 5405 undo T 3290'), ['L-1233', 'T-3290']);
+  assert.deepEqual(skus('L 1233 scratch that'), []);
+  assert.deepEqual(skus('hello there 55'), [], 'words and bare numbers are not SKUs');
+  assert.equal(parseSpokenSkus('undo').undo, 1);
+});
+
+test('case is taken from the inventory when it is unambiguous', () => {
+  const inventory = { 'g-8425': '', 'K-5405': '', 'G-5560': '', 'g-5560': '' };
+  assert.equal(resolveSkuCase('G-8425', inventory), 'g-8425');
+  assert.equal(resolveSkuCase('K-5405', inventory), 'K-5405');
+  assert.equal(resolveSkuCase('G-5560', inventory), 'G-5560');
+  assert.equal(resolveSkuCase('Z-1', inventory), 'Z-1');
+  assert.equal(resolveSkuCase('Z-1', {}), 'Z-1');
 });

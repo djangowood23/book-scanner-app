@@ -289,9 +289,10 @@ dialog h2 { margin-bottom: 16px; }
 .tabs a[aria-current="page"] { background: var(--card); color: var(--ink); box-shadow: var(--shadow); }
 .slips { list-style: none; margin: 0 0 14px; padding: 0; }
 .slips li {
-  display: grid; grid-template-columns: 1fr auto; column-gap: 8px; align-items: center;
+  display: grid; grid-template-columns: 1fr 64px auto; column-gap: 8px; align-items: center;
   padding: 10px 0; border-top: 1px solid var(--line);
 }
+.slips .qty { text-align: center; padding-left: 4px; padding-right: 4px; font-weight: 400; }
 .slips li:first-child { border-top: 0; padding-top: 0; }
 .slips input { font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: .02em; }
 .slips .remove { width: 40px; height: 40px; border-radius: 8px; background: none; border: 0; color: var(--muted); font-size: 20px; cursor: pointer; }
@@ -325,3 +326,9 @@ dialog h2 { margin-bottom: 16px; }
   /* The title sits lower down, inside the book, to match slip to book when inserting. */
   .slip-title { margin: 1.1in 0 0; font: 400 8pt/1.25 var(--sans); color: #444; overflow-wrap: anywhere; }
 }
+
+.preview { margin: 0; padding: 9px 12px; border-radius: 10px; background: var(--accent-soft); color: var(--accent); font-weight: 600; font-size: .95rem; overflow-wrap: anywhere; }
+.camera-option > summary { font-weight: 600; cursor: pointer; color: var(--muted); }
+.camera-option[open] > summary { margin-bottom: 14px; }
+.camera-option .shutter-row > :last-child { justify-self: end; }
+.books li.saved-row .title, .books li.saved-row .meta { display: block; }

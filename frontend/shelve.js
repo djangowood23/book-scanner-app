@@ -1,4 +1,4 @@
-import { buildLocationsCsv, matchSku, parseInventory } from './lib.js';
+import { buildLocationsCsv, matchSku, parseInventory, parseSpokenSkus, resolveSkuCase } from './lib.js';
 import { sendToAob } from './send.js';
 
 const MAX_EDGE = 2000; // handwriting on a row of slips needs more detail than a book cover
@@ -28,9 +28,9 @@ function save(key, value) {
 // Reading quality and passcode are shared with the scanner's Settings.
 const settings = { quality: 'best', passcode: '', ...load('bookscanner.settings', {}) };
 let inventory = load('bookscanner.inventory', {});
-/** SKUs read for the shelf being worked on: { sku, seenTitle, unsure } */
+/** The lot being worked on: { sku, qty, unsure } */
 let slips = load('bookscanner.shelf', []);
-/** Shelves already saved, waiting for export: { sku, location } */
+/** Lots already saved, waiting to go to AOB: { sku, location, qty } */
 let saved = load('bookscanner.locations', []);
 let busy = false;
 
@@ -48,6 +48,8 @@ function setShelfError(message) {
   $('shelfError').hidden = !message;
 }
 
+const plural = (count, word) => `${count} ${count === 1 ? word : `${word}s`}`;
+
 /** Ask for the app passcode on this page and remember it, so there is no trip to Settings. */
 function askPasscode() {
   const entered = prompt('Enter the app passcode');
@@ -58,11 +60,22 @@ function askPasscode() {
   return true;
 }
 
-// ---------- the shelf being worked on ----------
+function ask(message) {
+  const answer = confirm(message);
+  setTimeout(reviveCamera, 100);
+  return answer;
+}
 
-function addSlip(sku, seenTitle = '', unsure = false) {
-  if (slips.some((slip) => slip.sku === sku)) return false;
-  slips.push({ sku, seenTitle, unsure });
+// ---------- the lot being worked on ----------
+
+/** Add a SKU to the lot, or update its quantity if it is already there. Returns true if new. */
+function addSlip(sku, qty = 1, unsure = false) {
+  const existing = slips.find((slip) => slip.sku === sku);
+  if (existing) {
+    if (qty > 1) existing.qty = qty;
+    return false;
+  }
+  slips.push({ sku, qty, unsure });
   return true;
 }
 
@@ -70,7 +83,7 @@ function renderSlips() {
   const list = $('slips');
   list.replaceChildren();
   slips.forEach((slip, index) => {
-    const match = matchSku(slip.sku, inventory, slip.seenTitle);
+    const match = matchSku(slip.sku, inventory);
     const li = document.createElement('li');
     li.className = match.status === 'unknown' ? 'problem' : slip.unsure ? 'unsure' : '';
 
@@ -86,12 +99,17 @@ function renderSlips() {
       persistShelf();
     });
 
-    const note = document.createElement('p');
-    note.className = 'note';
-    if (match.status === 'ok') note.textContent = match.title || 'In your inventory';
-    else if (match.status === 'unverified') note.textContent = slip.unsure ? 'Handwriting unclear, please check' : '';
-    else note.textContent = match.suggestions.length ? 'Not in your inventory. Did you mean:' : 'Not in your inventory. Check the slip.';
-    if (match.status === 'ok' && slip.unsure) note.textContent += ' (handwriting unclear, please check)';
+    const qty = document.createElement('input');
+    qty.type = 'number';
+    qty.className = 'qty';
+    qty.min = '1';
+    qty.inputMode = 'numeric';
+    qty.value = String(slip.qty ?? 1);
+    qty.setAttribute('aria-label', `Quantity of ${slip.sku}`);
+    qty.addEventListener('change', () => {
+      slip.qty = Math.max(1, parseInt(qty.value, 10) || 1);
+      persistShelf();
+    });
 
     const remove = document.createElement('button');
     remove.type = 'button';
@@ -100,8 +118,14 @@ function renderSlips() {
     remove.setAttribute('aria-label', `Remove ${slip.sku}`);
     remove.addEventListener('click', () => { slips.splice(index, 1); persistShelf(); });
 
+    const note = document.createElement('p');
+    note.className = 'note';
+    if (match.status === 'ok') note.textContent = match.title;
+    else if (match.status === 'unknown') note.textContent = match.suggestions.length ? 'Not in your inventory. Did you mean:' : 'Not in your inventory. Check the SKU.';
+    if (slip.unsure && match.status !== 'unknown') note.textContent = [note.textContent, 'Handwriting unclear, please check'].filter(Boolean).join(' · ');
     note.hidden = !note.textContent;
-    li.append(input, remove, note);
+
+    li.append(input, qty, remove, note);
 
     if (match.suggestions.length) {
       const chips = document.createElement('div');
@@ -122,7 +146,7 @@ function renderSlips() {
     list.append(li);
   });
   $('emptyShelf').hidden = slips.length > 0;
-  $('slipCount').textContent = `${slips.length} ${slips.length === 1 ? 'book' : 'books'}`;
+  $('slipCount').textContent = plural(slips.length, 'book');
   $('saveShelf').disabled = busy || slips.length === 0;
 }
 
@@ -132,7 +156,42 @@ function persistShelf() {
   renderSlips();
 }
 
-// ---------- saved shelves ----------
+// ---------- speaking or typing SKUs ----------
+
+function describe(entries) {
+  return entries.map((entry) => (entry.qty > 1 ? `${entry.sku} ×${entry.qty}` : entry.sku)).join(', ');
+}
+
+/** Show what the text in the box will become, so a misheard SKU is caught before it is added. */
+function renderPreview() {
+  const { entries, undo } = parseSpokenSkus($('spoken').value);
+  const parts = [];
+  if (entries.length) parts.push(`Will add: ${describe(entries)}`);
+  if (undo) parts.push(`Will remove the last ${plural(undo, 'SKU')}`);
+  $('preview').textContent = parts.join(' · ');
+  $('preview').hidden = parts.length === 0;
+}
+
+function addSpoken() {
+  const box = $('spoken');
+  const { entries, undo } = parseSpokenSkus(box.value);
+  if (entries.length === 0 && undo === 0) {
+    if (box.value.trim()) toast('No SKU found in that. A SKU needs letters and a number, like L 1233.');
+    box.focus();
+    return;
+  }
+  for (let i = 0; i < undo && slips.length; i++) slips.pop();
+  let added = 0;
+  // Speech has no upper or lower case, so take it from the inventory where that is clear.
+  for (const entry of entries) if (addSlip(resolveSkuCase(entry.sku, inventory), entry.qty)) added++;
+  box.value = '';
+  renderPreview();
+  persistShelf();
+  if (added || undo) navigator.vibrate?.(30);
+  box.focus(); // keep the keyboard up for the next ones
+}
+
+// ---------- saved lots ----------
 
 function renderSaved() {
   const list = $('savedList');
@@ -142,23 +201,37 @@ function renderSaved() {
   for (const [location, count] of counts) {
     const li = document.createElement('li');
     li.className = 'saved-row';
+    const info = document.createElement('div');
     const name = document.createElement('span');
     name.className = 'title';
     name.textContent = location;
     const meta = document.createElement('span');
     meta.className = 'meta';
-    meta.textContent = `${count} ${count === 1 ? 'book' : 'books'}`;
-    li.append(name, meta);
+    meta.textContent = plural(count, 'book');
+    info.append(name, meta);
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'remove';
+    remove.textContent = '×';
+    remove.setAttribute('aria-label', `Remove everything saved for ${location}`);
+    remove.addEventListener('click', () => {
+      if (!ask(`Remove the ${plural(count, 'book')} saved for ${location}?`)) return;
+      saved = saved.filter((entry) => entry.location !== location);
+      save('bookscanner.locations', saved);
+      renderSaved();
+    });
+    li.append(info, remove);
     list.append(li);
   }
   const any = saved.length > 0;
+  $('savedHeading').textContent = any ? `Saved · ${plural(saved.length, 'book')}` : 'Saved';
   $('emptySaved').hidden = any;
   $('exportButton').hidden = !any;
   $('sendButton').hidden = !any;
   $('clearSaved').hidden = !any;
 }
 
-function saveShelf() {
+function saveLot() {
   const location = $('location').value.trim();
   if (!location) { setShelfError('Enter the shelf or tub first.'); $('location').focus(); return; }
   const unknown = slips.filter((slip) => matchSku(slip.sku, inventory).status === 'unknown');
@@ -166,15 +239,14 @@ function saveShelf() {
   // A book moved to a new shelf keeps only its latest location.
   const moving = new Set(slips.map((slip) => slip.sku));
   saved = saved.filter((entry) => !moving.has(entry.sku));
-  for (const slip of slips) saved.push({ sku: slip.sku, location });
+  for (const slip of slips) saved.push({ sku: slip.sku, location, qty: slip.qty ?? 1 });
   save('bookscanner.locations', saved);
-  toast(`Saved ${slips.length} ${slips.length === 1 ? 'book' : 'books'} to ${location}`);
+  toast(`Saved ${plural(slips.length, 'book')} to ${location}`);
   slips = [];
-  $('location').value = '';
-  save('bookscanner.shelfLocation', '');
+  // The location stays, ready for the next lot going into the same shelf or tub.
   persistShelf();
   renderSaved();
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  $('spoken').focus();
 }
 
 function locationsFilename() {
@@ -199,7 +271,7 @@ async function sendLocations() {
     return;
   }
   toast(`Sent ${saved.length} locations to AOB`);
-  if (ask('Sent to AOB. It usually shows up there within a few minutes.\n\nClear the saved shelves now?')) {
+  if (ask('Sent to AOB. It usually shows up there within a few minutes.\n\nClear the saved lots now?')) {
     saved = [];
     save('bookscanner.locations', saved);
     renderSaved();
@@ -218,11 +290,9 @@ function exportLocations() {
   toast(`Exported ${saved.length} locations`);
 }
 
-// ---------- camera ----------
+// ---------- camera (optional; runs only while its section is open) ----------
 
-function cameraOn() {
-  return Boolean(video.srcObject?.active);
-}
+const cameraWanted = () => $('cameraOption').open && !document.hidden;
 
 function showCameraMessage(text, canRetry) {
   $('cameraMessageText').textContent = text;
@@ -230,8 +300,13 @@ function showCameraMessage(text, canRetry) {
   $('cameraMessage').hidden = false;
 }
 
+function stopCamera() {
+  video.srcObject?.getTracks().forEach((track) => track.stop());
+  video.srcObject = null;
+}
+
 async function startCamera() {
-  if (cameraOn()) return;
+  if (video.srcObject?.active || !cameraWanted()) return;
   if (!navigator.mediaDevices?.getUserMedia) {
     showCameraMessage('This browser cannot use the camera here. Use a photo from your library instead.', false);
     return;
@@ -252,32 +327,21 @@ async function startCamera() {
 /** iPhones freeze the camera picture when a system dialog opens; bring it back. */
 let reviving = false;
 async function reviveCamera() {
-  if (document.hidden || reviving) return;
+  if (!cameraWanted() || reviving) return;
   reviving = true;
   try {
-    await reviveCameraNow();
+    const track = video.srcObject?.getVideoTracks()[0];
+    if (!track || track.readyState !== 'live') {
+      stopCamera();
+      await startCamera();
+    } else if (video.paused) {
+      await video.play().catch(() => {});
+    }
   } finally {
     reviving = false;
   }
 }
-
-async function reviveCameraNow() {
-  const track = video.srcObject?.getVideoTracks()[0];
-  if (!track || track.readyState !== 'live') {
-    video.srcObject?.getTracks().forEach((old) => old.stop());
-    video.srcObject = null;
-    await startCamera();
-  } else if (video.paused) {
-    video.play().catch(() => {});
-  }
-}
 video.addEventListener('pause', () => setTimeout(reviveCamera, 100));
-
-function ask(message) {
-  const answer = confirm(message);
-  setTimeout(reviveCamera, 100);
-  return answer;
-}
 
 function snapshot(source, width, height) {
   const scale = Math.min(1, MAX_EDGE / Math.max(width, height));
@@ -292,8 +356,6 @@ function frame() {
   return snapshot(video, video.videoWidth, video.videoHeight);
 }
 
-// ---------- reading ----------
-
 async function callRead(image, kind, retried = false) {
   let response;
   try {
@@ -303,7 +365,7 @@ async function callRead(image, kind, retried = false) {
       body: JSON.stringify({ image, kind, quality: settings.quality }),
     });
   } catch {
-    throw new Error('No connection to the server. Check your signal and try again.');
+    throw new Error('No connection to the server. Speak or type the SKUs instead.');
   }
   if (response.status === 401) {
     if (!retried && askPasscode()) return callRead(image, kind, true);
@@ -344,7 +406,7 @@ function readSlips(image) {
     const reading = await callRead(image, 'slips');
     if (reading.slips.length === 0) throw new Error('No SKU slips were found in that photo. Move closer and try again.');
     let added = 0;
-    for (const slip of reading.slips) if (addSlip(slip.sku, slip.title, slip.unsure)) added++;
+    for (const slip of reading.slips) if (addSlip(slip.sku, 1, slip.unsure)) added++;
     persistShelf();
     const repeats = reading.slips.length - added;
     toast(`Added ${added}${repeats ? `, ${repeats} already listed` : ''}`);
@@ -369,8 +431,8 @@ function readLocation() {
 function renderInventory() {
   const count = Object.keys(inventory).length;
   $('inventoryStatus').textContent = count
-    ? `${count.toLocaleString()} SKUs loaded. Each SKU you read is checked against this list.`
-    : 'Shelving works without this. If you load your AOB inventory export, each SKU you read is also checked against it.';
+    ? `${count.toLocaleString()} SKUs loaded. Each SKU is checked against this list, and upper or lower case is taken from it.`
+    : 'Shelving works without this. If you load your AOB inventory export, each SKU is checked against it and upper or lower case is taken from it.';
 }
 
 async function loadInventory(file) {
@@ -391,6 +453,28 @@ async function loadInventory(file) {
 
 // ---------- wiring ----------
 
+$('spoken').addEventListener('input', renderPreview);
+$('spoken').addEventListener('keydown', (event) => {
+  if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); addSpoken(); }
+});
+$('addSpoken').addEventListener('click', addSpoken);
+$('saveShelf').addEventListener('click', saveLot);
+$('sendButton').addEventListener('click', sendLocations);
+$('exportButton').addEventListener('click', exportLocations);
+$('clearSaved').addEventListener('click', () => {
+  if (!ask(`Clear all ${saved.length} saved locations? Send or export first if you still need them.`)) return;
+  saved = [];
+  save('bookscanner.locations', saved);
+  renderSaved();
+});
+$('location').addEventListener('input', () => {
+  setShelfError(null);
+  save('bookscanner.shelfLocation', $('location').value);
+});
+
+$('cameraOption').addEventListener('toggle', () => {
+  if ($('cameraOption').open) startCamera(); else stopCamera();
+});
 $('shutter').addEventListener('click', () => { const image = frame(); if (image) readSlips(image); });
 $('readLocation').addEventListener('click', readLocation);
 $('retryCamera').addEventListener('click', startCamera);
@@ -406,45 +490,17 @@ $('fileInput').addEventListener('change', async (event) => {
     toast(`Could not open ${file.name}.`);
   }
 });
-$('addForm').addEventListener('submit', (event) => {
-  event.preventDefault();
-  const sku = $('manualSku').value.trim();
-  if (!sku) return;
-  if (!addSlip(sku)) toast(`${sku} is already listed`);
-  $('manualSku').value = '';
-  persistShelf();
-});
-$('saveShelf').addEventListener('click', saveShelf);
-$('exportButton').addEventListener('click', exportLocations);
-$('sendButton').addEventListener('click', sendLocations);
-$('clearSaved').addEventListener('click', () => {
-  if (!ask(`Clear all ${saved.length} saved locations? Export first if you still need them.`)) return;
-  saved = [];
-  save('bookscanner.locations', saved);
-  renderSaved();
-});
 $('inventoryInput').addEventListener('change', async (event) => {
   const file = event.target.files[0];
   event.target.value = '';
   if (file) await loadInventory(file);
 });
-$('location').addEventListener('input', () => {
-  setShelfError(null);
-  save('bookscanner.shelfLocation', $('location').value);
-});
-
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) {
-    video.srcObject?.getTracks().forEach((track) => track.stop());
-    video.srcObject = null;
-  } else {
-    startCamera();
-  }
+  if (document.hidden) stopCamera(); else startCamera();
 });
 
+// Pick up where the lot was left, so switching to the scanner and back loses nothing.
+$('location').value = load('bookscanner.shelfLocation', '');
 renderSlips();
 renderSaved();
 renderInventory();
-// Pick up where the shelf was left, so switching to the scanner and back loses nothing.
-$('location').value = load('bookscanner.shelfLocation', '');
-startCamera();

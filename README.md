@@ -29,12 +29,17 @@ carries public image links.
 
 ## Shelving
 
-`shelve.html` records which shelf or tub each book is in. Enter the location
-(or read its label with the camera), photograph the handwritten SKU slips, and
-each SKU is checked against a loaded AOB inventory export so misread
-handwriting is flagged with the closest real SKUs. Saved shelves export as
-`aob_locations_<timestamp>.csv` with `sku`, `location` and `qty` (always 1: a
-book just shelved is in stock).
+`shelve.html` records which shelf or tub each book is in. Enter the location,
+then speak or type the SKUs: the box takes iPhone keyboard dictation, so
+"L 1233, K 5405 quantity 3" becomes `L-1233` and `K-5405` with quantity 3.
+"undo" drops the last SKU, "lowercase" before a SKU keeps it lower case, and
+"dash" is read as a hyphen. Voice entry needs no connection. The camera, which
+reads handwritten SKU slips, is an option further down the page.
+
+Each lot is saved under its location and kept on the device until it is sent or
+exported as `aob_locations_<timestamp>.csv` with `sku`, `location` and `qty`
+(1 unless a quantity was given). If an AOB inventory export is loaded, each SKU
+is checked against it and upper or lower case is taken from it.
 
 ## Printing SKU slips
 
