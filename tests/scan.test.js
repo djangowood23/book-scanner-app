@@ -40,6 +40,7 @@ test('enforces the passcode when one is configured', async () => {
     assert.equal((await post({ images: [{ data: PIXEL }] })).status, 401);
     assert.equal((await post({ images: [{ data: PIXEL }] }, { 'x-app-passcode': 'wrong' })).status, 401);
     assert.equal((await post({ images: [{ data: PIXEL }] }, { 'x-app-passcode': 'shelf' })).status, 200);
+    assert.equal((await post({ images: [{ data: PIXEL }] }, { 'x-app-passcode': ' shelf ' })).status, 200);
   } finally {
     delete env.APP_PASSCODE;
   }

@@ -10,9 +10,10 @@ export function json(body: unknown, status = 200): Response {
  * Returns a 401 response to send back, or null when the request may proceed.
  */
 export function checkPasscode(req: Request): Response | null {
-  const expected = Netlify.env.get("APP_PASSCODE");
+  const expected = Netlify.env.get("APP_PASSCODE")?.trim();
   if (!expected) return null;
-  const given = Buffer.from(req.headers.get("x-app-passcode") ?? "");
+  // Phone keyboards often leave a stray space after a typed word.
+  const given = Buffer.from((req.headers.get("x-app-passcode") ?? "").trim());
   const want = Buffer.from(expected);
   if (given.length === want.length && timingSafeEqual(given, want)) return null;
   return json({ error: "passcode", message: "Wrong or missing passcode." }, 401);
