@@ -302,3 +302,78 @@ export function buildLocationsCsv(assignments) {
   for (const { sku, location } of assignments) lines.push(`${escapeCsvCell(sku)},${escapeCsvCell(location)}`);
   return lines.join('\n');
 }
+
+// ---------- SKU slips as a PDF, for printing without the phone's print dialog ----------
+
+const PAGE_W = 612, PAGE_H = 792, PAGE_MARGIN = 28.8; // US Letter in points, 0.4in margin
+const SLIP_COLS = 5, SLIP_ROWS = 2;
+
+/** Text safe to place in a PDF string using the built-in Latin fonts. */
+function pdfText(text) {
+  return String(text ?? '').replace(/[^\x20-\x7E\xA0-\xFF]/g, '?').replace(/([\\()])/g, '\\$1');
+}
+
+function wrapText(text, perLine, maxLines) {
+  const lines = [];
+  let line = '';
+  for (const word of String(text ?? '').split(/\s+/).filter(Boolean)) {
+    if (line && (line + ' ' + word).length > perLine) { lines.push(line); line = word; }
+    else line = line ? `${line} ${word}` : word;
+    while (line.length > perLine) { lines.push(line.slice(0, perLine)); line = line.slice(perLine); }
+  }
+  if (line) lines.push(line);
+  return lines.slice(0, maxLines);
+}
+
+/**
+ * A PDF of cut-out slips, ten to a US Letter page: the SKU in bold at the top of each
+ * slip, the title lower down, dashed cut lines between. Returns the file as a string of
+ * single-byte characters.
+ */
+export function buildSlipsPdf(books) {
+  const slipW = (PAGE_W - 2 * PAGE_MARGIN) / SLIP_COLS;
+  const slipH = (PAGE_H - 2 * PAGE_MARGIN) / SLIP_ROWS;
+  const perPage = SLIP_COLS * SLIP_ROWS;
+  const pages = [];
+  for (let start = 0; start < books.length; start += perPage) {
+    const ops = ['0.5 w [3 3] 0 d 0.5 G'];
+    books.slice(start, start + perPage).forEach((book, i) => {
+      const x = PAGE_MARGIN + (i % SLIP_COLS) * slipW;
+      const top = PAGE_H - PAGE_MARGIN - Math.floor(i / SLIP_COLS) * slipH;
+      ops.push(`${x.toFixed(2)} ${(top - slipH).toFixed(2)} ${slipW.toFixed(2)} ${slipH.toFixed(2)} re S`);
+      const sku = String(book.sku ?? '');
+      const size = sku.length > 12 ? 10 : sku.length > 8 ? 14 : 20;
+      const skuLines = wrapText(sku, size === 10 ? 16 : 99, 2);
+      skuLines.forEach((line, n) => {
+        ops.push(`BT /F1 ${size} Tf ${(x + 7).toFixed(2)} ${(top - 26 - n * (size + 2)).toFixed(2)} Td (${pdfText(line)}) Tj ET`);
+      });
+      wrapText(book.title || (book.isbn ? `ISBN ${book.isbn}` : ''), 24, 4).forEach((line, n) => {
+        ops.push(`BT /F2 8 Tf ${(x + 7).toFixed(2)} ${(top - 110 - n * 10).toFixed(2)} Td (${pdfText(line)}) Tj ET`);
+      });
+    });
+    pages.push(ops.join('\n'));
+  }
+
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    `<< /Type /Pages /Count ${pages.length} /Kids [${pages.map((_, i) => `${5 + i * 2} 0 R`).join(' ')}] >>`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>',
+  ];
+  pages.forEach((content, i) => {
+    objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PAGE_W} ${PAGE_H}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${6 + i * 2} 0 R >>`);
+    objects.push(`<< /Length ${content.length} >>\nstream\n${content}\nendstream`);
+  });
+
+  let pdf = '%PDF-1.4\n';
+  const offsets = objects.map((body, i) => {
+    const offset = pdf.length;
+    pdf += `${i + 1} 0 obj\n${body}\nendobj\n`;
+    return offset;
+  });
+  const xref = pdf.length;
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const offset of offsets) pdf += `${String(offset).padStart(10, '0')} 00000 n \n`;
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return pdf;
+}
