@@ -296,10 +296,11 @@ export function matchSku(sku, inventory, seenTitle = '') {
   return { status: 'unknown', title: '', suggestions };
 }
 
-/** A two-column file AOB can import to set locations without touching anything else. */
+/** A file AOB can import to set each book's location and mark it in stock, touching nothing else. */
 export function buildLocationsCsv(assignments) {
-  const lines = ['sku,location'];
-  for (const { sku, location } of assignments) lines.push(`${escapeCsvCell(sku)},${escapeCsvCell(location)}`);
+  // A book just placed on a shelf is in stock, so its quantity is set to 1 as well.
+  const lines = ['sku,location,qty'];
+  for (const { sku, location } of assignments) lines.push(`${escapeCsvCell(sku)},${escapeCsvCell(location)},1`);
   return lines.join('\n');
 }
 

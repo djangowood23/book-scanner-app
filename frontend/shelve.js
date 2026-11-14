@@ -171,6 +171,7 @@ function saveShelf() {
   toast(`Saved ${slips.length} ${slips.length === 1 ? 'book' : 'books'} to ${location}`);
   slips = [];
   $('location').value = '';
+  save('bookscanner.shelfLocation', '');
   persistShelf();
   renderSaved();
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -358,6 +359,7 @@ function readLocation() {
     const reading = await callRead(image, 'location');
     if (!reading.location) throw new Error('No label could be read. Move closer, or type the location.');
     $('location').value = reading.location;
+    save('bookscanner.shelfLocation', reading.location);
     setShelfError(null);
   });
 }
@@ -426,7 +428,10 @@ $('inventoryInput').addEventListener('change', async (event) => {
   event.target.value = '';
   if (file) await loadInventory(file);
 });
-$('location').addEventListener('input', () => setShelfError(null));
+$('location').addEventListener('input', () => {
+  setShelfError(null);
+  save('bookscanner.shelfLocation', $('location').value);
+});
 
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
@@ -440,4 +445,6 @@ document.addEventListener('visibilitychange', () => {
 renderSlips();
 renderSaved();
 renderInventory();
+// Pick up where the shelf was left, so switching to the scanner and back loses nothing.
+$('location').value = load('bookscanner.shelfLocation', '');
 startCamera();
