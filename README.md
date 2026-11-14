@@ -32,7 +32,7 @@ carries public image links.
 `shelve.html` records which shelf or tub each book is in. Enter the location,
 then speak or type the SKUs: the box takes iPhone keyboard dictation, so
 "L 1233, K 5405 quantity 3" becomes `L-1233` and `K-5405` with quantity 3.
-"undo" drops the last SKU, "lowercase" before a SKU keeps it lower case, and
+"new tub 13" (or shelf, box, bin) saves the lot so far and moves on, "undo" drops the last SKU, "lowercase" before a SKU keeps it lower case, and
 "dash" is read as a hyphen. Voice entry needs no connection. The camera, which
 reads handwritten SKU slips, is an option further down the page.
 

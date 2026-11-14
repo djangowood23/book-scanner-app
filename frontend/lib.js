@@ -412,15 +412,19 @@ export function formatSku(text, lower = false) {
  *   "lowercase g 8425"        -> g-8425
  *   "R A 11 dash 1 dash 5"    -> RA11-1-5
  *   "... undo"                -> drops the SKU before it
+ *   "... new tub 13 T 3290"   -> moves to TUB 13, then T-3290 goes there
  *
- * Returns { entries: [{ sku, qty }], undo } where undo counts "undo" commands that had
- * nothing in this text to remove, so the caller can remove earlier entries.
+ * Returns { steps, entries, undo }. `steps` is everything in spoken order: { sku, qty }
+ * for a SKU and { location } for a move to another shelf or tub. `entries` is the SKUs
+ * alone. `undo` counts "undo" commands that had nothing in this text to remove, so the
+ * caller can remove earlier entries.
  */
 export function parseSpokenSkus(text) {
   let words = String(text ?? '').toLowerCase()
     .replace(/\b(?:scratch that|delete last|remove last|undo)\b/g, ' #undo ')
     .replace(/\b(?:quantity|quantities|qty|count|times)\b/g, ' #qty ')
     .replace(/\b(?:lower ?case|small)\b/g, ' #lower ')
+    .replace(/\b(?:new |next )?(tub|shelf|box|bin|tote|crate|rack|bay)\b/g, ' #loc=$1 ')
     .replace(/\bdouble (?:you|u)\b/g, ' w ')
     .replace(/\b(?:dash|hyphen|minus)\b/g, ' - ')
     .replace(/\b(?:next|and|then|comma|period|new line)\b|[,.;:\n]/g, ' | ')
@@ -439,14 +443,15 @@ export function parseSpokenSkus(text) {
     else tokens.push(word);
   }
 
-  const entries = [];
+  const steps = [];
+  const lastSku = () => steps.findLast((step) => step.sku);
   let undo = 0;
   let current = '';
   let lower = false;
   const complete = () => /[a-z]/.test(current) && /\d$/.test(current);
   const flush = () => {
     const sku = formatSku(current, lower);
-    if (/[A-Za-z]/.test(sku) && /\d/.test(sku) && sku.length <= 24) entries.push({ sku, qty: 1 });
+    if (/[A-Za-z]/.test(sku) && /\d/.test(sku) && sku.length <= 24) steps.push({ sku, qty: 1 });
     current = '';
     lower = false;
   };
@@ -454,19 +459,26 @@ export function parseSpokenSkus(text) {
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i];
     if (token === '|') flush();
-    else if (token === '#undo') {
+    else if (token.startsWith('#loc=')) {
       flush();
-      if (entries.length) entries.pop(); else undo++;
+      // The name is the next word, plus a short number after a single letter: "shelf A 3".
+      let name = /^[a-z0-9]+$/.test(tokens[i + 1] ?? '') ? tokens[++i] : '';
+      if (/^[a-z]$/.test(name) && /^\d{1,2}$/.test(tokens[i + 1] ?? '')) name += tokens[++i];
+      if (name) steps.push({ location: `${token.slice(5)} ${name}`.toUpperCase() });
+    } else if (token === '#undo') {
+      flush();
+      const last = lastSku();
+      if (last) steps.splice(steps.indexOf(last), 1); else undo++;
     } else if (token === '#qty') {
       flush();
       const qty = parseInt(tokens[i + 1], 10);
-      if (qty >= 1 && qty <= 999) { if (entries.length) entries[entries.length - 1].qty = qty; i++; }
+      if (qty >= 1 && qty <= 999) { if (lastSku()) lastSku().qty = qty; i++; }
     } else if (token === '#lower') {
       flush();
       lower = true;
-    } else if (/^x\d{1,3}$/.test(token) && (complete() || (!current && entries.length))) {
+    } else if (/^x\d{1,3}$/.test(token) && (complete() || (!current && lastSku()))) {
       flush();
-      entries[entries.length - 1].qty = parseInt(token.slice(1), 10); // "x3"
+      lastSku().qty = parseInt(token.slice(1), 10); // "x3"
     } else if (/^[a-z]{4,}$/.test(token)) {
       flush(); // an ordinary word, not part of a SKU
     } else if (/^[a-z0-9-]+$/.test(token)) {
@@ -476,7 +488,7 @@ export function parseSpokenSkus(text) {
     }
   }
   flush();
-  return { entries, undo };
+  return { steps, entries: steps.filter((step) => step.sku), undo };
 }
 
 /**
