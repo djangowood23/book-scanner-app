@@ -23,15 +23,21 @@
 <main>
   <section class="card" aria-labelledby="locationHeading">
     <h2 id="locationHeading" class="visually-hidden">Shelf or tub</h2>
-    <div class="field">
-      <label for="location">Shelf or tub</label>
-      <input type="text" id="location" autocomplete="off" autocapitalize="characters" placeholder="e.g. TUB 12">
+    <div class="row">
+      <div class="field">
+        <label for="location">Shelf or tub</label>
+        <input type="text" id="location" autocomplete="off" autocapitalize="characters" placeholder="e.g. BT-25">
+      </div>
+      <div class="field prefix-field">
+        <label for="prefix">SKU prefix</label>
+        <input type="text" id="prefix" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" maxlength="12" placeholder="e.g. KEV">
+      </div>
     </div>
 
     <div class="field">
       <label for="spoken">Say or type the SKUs</label>
       <textarea id="spoken" rows="2" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" placeholder="L 1233, K 5405 quantity 3"></textarea>
-      <p class="help">Tap the microphone on the keyboard and say them one after another. Say "quantity 3" after a SKU for more than one copy, "undo" to drop the last one, or "new tub B T 25" to move on.</p>
+      <p class="help">Tap the microphone on the keyboard and say them one after another. With a prefix set, say just the numbers with "and" between them; say a different prefix for the odd one out. Say "quantity 3" after a SKU for more than one copy, "undo" to drop the last one, or "new tub B T 25" to move on.</p>
     </div>
     <p class="preview" id="preview" hidden></p>
     <button type="button" class="btn primary wide" id="addSpoken">Add</button>

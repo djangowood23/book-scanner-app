@@ -32,6 +32,9 @@ carries public image links.
 `shelve.html` records which shelf or tub each book is in. Enter the location,
 then speak or type the SKUs: the box takes iPhone keyboard dictation, so
 "L 1233, K 5405 quantity 3" becomes `L-1233` and `K-5405` with quantity 3.
+With a SKU prefix set (say `KEV`), numbers said alone take it: "231 and 232"
+becomes `KEV-231` and `KEV-232`, while a book with another prefix is said in
+full. "prefix G" changes the default by voice.
 "new tub B T 25" (or shelf, box, bin, location) saves the lot so far and moves to `BT-25`, a coded name being kept as it is and a bare number becoming `TUB 12`, "undo" drops the last SKU, "lowercase" before a SKU keeps it lower case, and
 "dash" is read as a hyphen. Voice entry needs no connection. The camera, which
 reads handwritten SKU slips, is an option further down the page.
