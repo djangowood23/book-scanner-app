@@ -33,7 +33,8 @@ carries public image links.
 (or read its label with the camera), photograph the handwritten SKU slips, and
 each SKU is checked against a loaded AOB inventory export so misread
 handwriting is flagged with the closest real SKUs. Saved shelves export as
-`aob_locations_<timestamp>.csv` with two columns, `sku` and `location`.
+`aob_locations_<timestamp>.csv` with `sku`, `location` and `qty` (always 1: a
+book just shelved is in stock).
 
 ## Printing SKU slips
 

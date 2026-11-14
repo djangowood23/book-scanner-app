@@ -134,7 +134,7 @@ test('SKU matching against the inventory', () => {
 
 test('locations file', () => {
   assert.equal(buildLocationsCsv([{ sku: 'K-5405', location: 'Tub 12' }, { sku: 'T-1', location: 'Shelf A, row 2' }]),
-    'sku,location\nK-5405,Tub 12\nT-1,"Shelf A, row 2"');
+    'sku,location,qty\nK-5405,Tub 12,1\nT-1,"Shelf A, row 2",1');
 });
 
 import { buildSlipsPdf } from '../frontend/lib.js';

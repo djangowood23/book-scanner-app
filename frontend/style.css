@@ -280,7 +280,13 @@ dialog h2 { margin-bottom: 16px; }
 
 /* ---------- shelving page ---------- */
 
-.topbar .nav { font-size: .85rem; font-weight: 600; color: var(--accent); text-underline-offset: 3px; }
+.topbar .spacer { flex: 1; }
+.tabs { display: flex; padding: 3px; border-radius: 12px; background: var(--accent-soft); }
+.tabs a {
+  min-width: 78px; padding: 8px 14px; border-radius: 9px; text-align: center;
+  font: 600 .95rem var(--sans); color: var(--accent); text-decoration: none;
+}
+.tabs a[aria-current="page"] { background: var(--card); color: var(--ink); box-shadow: var(--shadow); }
 .slips { list-style: none; margin: 0 0 14px; padding: 0; }
 .slips li {
   display: grid; grid-template-columns: 1fr auto; column-gap: 8px; align-items: center;
