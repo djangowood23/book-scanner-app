@@ -188,8 +188,13 @@ test('a new shelf or tub can be named in the flow', () => {
   const steps = (text) => parseSpokenSkus(text).steps.map((step) => step.location ?? (step.qty === 1 ? step.sku : `${step.sku} x${step.qty}`));
   assert.deepEqual(steps('L 1233 K 5405 new tub 13 T 3290'), ['L-1233', 'K-5405', 'TUB 13', 'T-3290']);
   assert.deepEqual(steps('tub twelve'), ['TUB 12']);
-  assert.deepEqual(steps('shelf A L 1233'), ['SHELF A', 'L-1233']);
-  assert.deepEqual(steps('next shelf B 3 K5405 quantity 2'), ['SHELF B3', 'K-5405 x2']);
+  assert.deepEqual(steps('shelf A, L 1233'), ['SHELF A', 'L-1233']);
+  assert.deepEqual(steps('tub 12 L 1233'), ['TUB 12', 'L-1233']);
+  // Shelves and tubs with codes of their own keep them, without the word in front.
+  assert.deepEqual(steps('tub B T 25 L 1233'), ['BT-25', 'L-1233']);
+  assert.deepEqual(steps('new shelf W 1 dash 2 K5405 quantity 2'), ['W1-2', 'K-5405 x2']);
+  assert.deepEqual(steps('L 1233 next tub G 18 dash 18'), ['L-1233', 'G18-18']);
+  assert.deepEqual(steps('location BT25'), ['BT-25']);
   assert.deepEqual(steps('L 1233 box 4 undo'), ['BOX 4'], 'undo removes the last SKU, not the move');
   assert.deepEqual(parseSpokenSkus('tub 13 T 3290').entries, [{ sku: 'T-3290', qty: 1 }]);
 });

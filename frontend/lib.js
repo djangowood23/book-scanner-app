@@ -413,6 +413,7 @@ export function formatSku(text, lower = false) {
  *   "R A 11 dash 1 dash 5"    -> RA11-1-5
  *   "... undo"                -> drops the SKU before it
  *   "... new tub 13 T 3290"   -> moves to TUB 13, then T-3290 goes there
+ *   "tub B T 25", "shelf W 1 dash 2" -> moves to BT-25, W1-2 (a code is used as it is)
  *
  * Returns { steps, entries, undo }. `steps` is everything in spoken order: { sku, qty }
  * for a SKU and { location } for a move to another shelf or tub. `entries` is the SKUs
@@ -424,7 +425,7 @@ export function parseSpokenSkus(text) {
     .replace(/\b(?:scratch that|delete last|remove last|undo)\b/g, ' #undo ')
     .replace(/\b(?:quantity|quantities|qty|count|times)\b/g, ' #qty ')
     .replace(/\b(?:lower ?case|small)\b/g, ' #lower ')
-    .replace(/\b(?:new |next )?(tub|shelf|box|bin|tote|crate|rack|bay)\b/g, ' #loc=$1 ')
+    .replace(/\b(?:new |next )?(tub|shelf|box|bin|tote|crate|rack|bay|location)\b/g, ' #loc=$1 ')
     .replace(/\bdouble (?:you|u)\b/g, ' w ')
     .replace(/\b(?:dash|hyphen|minus)\b/g, ' - ')
     .replace(/\b(?:next|and|then|comma|period|new line)\b|[,.;:\n]/g, ' | ')
@@ -448,12 +449,23 @@ export function parseSpokenSkus(text) {
   let undo = 0;
   let current = '';
   let lower = false;
+  let locating = ''; // the word that announced a shelf or tub, while its name is being heard
   const complete = () => /[a-z]/.test(current) && /\d$/.test(current);
   const flush = () => {
-    const sku = formatSku(current, lower);
-    if (/[A-Za-z]/.test(sku) && /\d/.test(sku) && sku.length <= 24) steps.push({ sku, qty: 1 });
+    const code = formatSku(current, lower);
+    const isCode = /[A-Za-z]/.test(code) && /\d/.test(code) && code.length <= 24;
+    if (locating) {
+      // Shelves and tubs with their own codes (BT-25, W1-2) keep them; a bare number
+      // or letter is prefixed with the word that was said: TUB 12, SHELF A.
+      if (isCode) steps.push({ location: code });
+      else if (code && locating !== 'location') steps.push({ location: `${locating} ${code}`.toUpperCase() });
+      else if (code) steps.push({ location: code });
+    } else if (isCode) {
+      steps.push({ sku: code, qty: 1 });
+    }
     current = '';
     lower = false;
+    locating = '';
   };
 
   for (let i = 0; i < tokens.length; i++) {
@@ -461,10 +473,7 @@ export function parseSpokenSkus(text) {
     if (token === '|') flush();
     else if (token.startsWith('#loc=')) {
       flush();
-      // The name is the next word, plus a short number after a single letter: "shelf A 3".
-      let name = /^[a-z0-9]+$/.test(tokens[i + 1] ?? '') ? tokens[++i] : '';
-      if (/^[a-z]$/.test(name) && /^\d{1,2}$/.test(tokens[i + 1] ?? '')) name += tokens[++i];
-      if (name) steps.push({ location: `${token.slice(5)} ${name}`.toUpperCase() });
+      locating = token.slice(5); // what follows is read like a SKU and becomes the location
     } else if (token === '#undo') {
       flush();
       const last = lastSku();
@@ -482,8 +491,9 @@ export function parseSpokenSkus(text) {
     } else if (/^[a-z]{4,}$/.test(token)) {
       flush(); // an ordinary word, not part of a SKU
     } else if (/^[a-z0-9-]+$/.test(token)) {
-      // A letter arriving after a finished prefix-and-number starts the next SKU.
-      if (complete() && /^[a-z]/.test(token)) flush();
+      // A letter arriving after a finished prefix-and-number starts the next SKU. So does
+      // a letter after a location that was only a number, as in "tub 12 L 1233".
+      if (/^[a-z]/.test(token) && (complete() || (locating && /^\d+$/.test(current)))) flush();
       current += token;
     }
   }
