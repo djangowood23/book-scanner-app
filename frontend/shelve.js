@@ -51,6 +51,7 @@ function setShelfError(message) {
 /** Ask for the app passcode on this page and remember it, so there is no trip to Settings. */
 function askPasscode() {
   const entered = prompt('Enter the app passcode');
+  setTimeout(reviveCamera, 100);
   if (!entered) return false;
   settings.passcode = entered.trim();
   save('bookscanner.settings', { ...load('bookscanner.settings', {}), passcode: settings.passcode });
@@ -161,7 +162,7 @@ function saveShelf() {
   const location = $('location').value.trim();
   if (!location) { setShelfError('Enter the shelf or tub first.'); $('location').focus(); return; }
   const unknown = slips.filter((slip) => matchSku(slip.sku, inventory).status === 'unknown');
-  if (unknown.length && !confirm(`${unknown.length} of these SKUs ${unknown.length === 1 ? 'is' : 'are'} not in your inventory. Save anyway?`)) return;
+  if (unknown.length && !ask(`${unknown.length} of these SKUs ${unknown.length === 1 ? 'is' : 'are'} not in your inventory. Save anyway?`)) return;
   // A book moved to a new shelf keeps only its latest location.
   const moving = new Set(slips.map((slip) => slip.sku));
   saved = saved.filter((entry) => !moving.has(entry.sku));
@@ -197,7 +198,7 @@ async function sendLocations() {
     return;
   }
   toast(`Sent ${saved.length} locations to AOB`);
-  if (confirm('Sent to AOB. It usually shows up there within a few minutes.\n\nClear the saved shelves now?')) {
+  if (ask('Sent to AOB. It usually shows up there within a few minutes.\n\nClear the saved shelves now?')) {
     saved = [];
     save('bookscanner.locations', saved);
     renderSaved();
@@ -245,6 +246,36 @@ async function startCamera() {
       ? 'Camera access is blocked. Allow it in your browser settings, or use a photo from your library.'
       : 'No camera was found. Use a photo from your library instead.', true);
   }
+}
+
+/** iPhones freeze the camera picture when a system dialog opens; bring it back. */
+let reviving = false;
+async function reviveCamera() {
+  if (document.hidden || reviving) return;
+  reviving = true;
+  try {
+    await reviveCameraNow();
+  } finally {
+    reviving = false;
+  }
+}
+
+async function reviveCameraNow() {
+  const track = video.srcObject?.getVideoTracks()[0];
+  if (!track || track.readyState !== 'live') {
+    video.srcObject?.getTracks().forEach((old) => old.stop());
+    video.srcObject = null;
+    await startCamera();
+  } else if (video.paused) {
+    video.play().catch(() => {});
+  }
+}
+video.addEventListener('pause', () => setTimeout(reviveCamera, 100));
+
+function ask(message) {
+  const answer = confirm(message);
+  setTimeout(reviveCamera, 100);
+  return answer;
 }
 
 function snapshot(source, width, height) {
@@ -385,7 +416,7 @@ $('saveShelf').addEventListener('click', saveShelf);
 $('exportButton').addEventListener('click', exportLocations);
 $('sendButton').addEventListener('click', sendLocations);
 $('clearSaved').addEventListener('click', () => {
-  if (!confirm(`Clear all ${saved.length} saved locations? Export first if you still need them.`)) return;
+  if (!ask(`Clear all ${saved.length} saved locations? Export first if you still need them.`)) return;
   saved = [];
   save('bookscanner.locations', saved);
   renderSaved();
