@@ -184,6 +184,16 @@ test('dictated SKUs', () => {
   assert.equal(parseSpokenSkus('undo').undo, 1);
 });
 
+test('a new shelf or tub can be named in the flow', () => {
+  const steps = (text) => parseSpokenSkus(text).steps.map((step) => step.location ?? (step.qty === 1 ? step.sku : `${step.sku} x${step.qty}`));
+  assert.deepEqual(steps('L 1233 K 5405 new tub 13 T 3290'), ['L-1233', 'K-5405', 'TUB 13', 'T-3290']);
+  assert.deepEqual(steps('tub twelve'), ['TUB 12']);
+  assert.deepEqual(steps('shelf A L 1233'), ['SHELF A', 'L-1233']);
+  assert.deepEqual(steps('next shelf B 3 K5405 quantity 2'), ['SHELF B3', 'K-5405 x2']);
+  assert.deepEqual(steps('L 1233 box 4 undo'), ['BOX 4'], 'undo removes the last SKU, not the move');
+  assert.deepEqual(parseSpokenSkus('tub 13 T 3290').entries, [{ sku: 'T-3290', qty: 1 }]);
+});
+
 test('case is taken from the inventory when it is unambiguous', () => {
   const inventory = { 'g-8425': '', 'K-5405': '', 'G-5560': '', 'g-5560': '' };
   assert.equal(resolveSkuCase('G-8425', inventory), 'g-8425');

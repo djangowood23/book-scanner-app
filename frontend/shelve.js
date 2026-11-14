@@ -164,18 +164,25 @@ function describe(entries) {
 
 /** Show what the text in the box will become, so a misheard SKU is caught before it is added. */
 function renderPreview() {
-  const { entries, undo } = parseSpokenSkus($('spoken').value);
+  const { steps, undo } = parseSpokenSkus($('spoken').value);
   const parts = [];
-  if (entries.length) parts.push(`Will add: ${describe(entries)}`);
   if (undo) parts.push(`Will remove the last ${plural(undo, 'SKU')}`);
+  // Read out the steps in order: SKUs for the current shelf, then each move and what follows it.
+  let run = [];
+  const closeRun = () => { if (run.length) parts.push(`Will add: ${describe(run)}`); run = []; };
+  for (const step of steps) {
+    if (step.sku) run.push(step);
+    else { closeRun(); parts.push(`Move to ${step.location}`); }
+  }
+  closeRun();
   $('preview').textContent = parts.join(' · ');
   $('preview').hidden = parts.length === 0;
 }
 
 function addSpoken() {
   const box = $('spoken');
-  const { entries, undo } = parseSpokenSkus(box.value);
-  if (entries.length === 0 && undo === 0) {
+  const { steps, undo } = parseSpokenSkus(box.value);
+  if (steps.length === 0 && undo === 0) {
     if (box.value.trim()) toast('No SKU found in that. A SKU needs letters and a number, like L 1233.');
     box.focus();
     return;
@@ -183,11 +190,21 @@ function addSpoken() {
   for (let i = 0; i < undo && slips.length; i++) slips.pop();
   let added = 0;
   // Speech has no upper or lower case, so take it from the inventory where that is clear.
-  for (const entry of entries) if (addSlip(resolveSkuCase(entry.sku, inventory), entry.qty)) added++;
+  for (const step of steps) {
+    if (step.sku) {
+      if (addSlip(resolveSkuCase(step.sku, inventory), step.qty)) added++;
+    } else {
+      // Moving on: what was said so far belongs to the shelf or tub being left.
+      if (slips.length && $('location').value.trim()) commitLot($('location').value.trim());
+      $('location').value = step.location;
+      save('bookscanner.shelfLocation', step.location);
+      toast(`Now ${step.location}`);
+    }
+  }
   box.value = '';
   renderPreview();
   persistShelf();
-  if (added || undo) navigator.vibrate?.(30);
+  if (added || undo || steps.length) navigator.vibrate?.(30);
   box.focus(); // keep the keyboard up for the next ones
 }
 
@@ -236,6 +253,12 @@ function saveLot() {
   if (!location) { setShelfError('Enter the shelf or tub first.'); $('location').focus(); return; }
   const unknown = slips.filter((slip) => matchSku(slip.sku, inventory).status === 'unknown');
   if (unknown.length && !ask(`${unknown.length} of these SKUs ${unknown.length === 1 ? 'is' : 'are'} not in your inventory. Save anyway?`)) return;
+  commitLot(location);
+  $('spoken').focus();
+}
+
+/** Move the current lot into the saved record under `location`. The location field is left alone. */
+function commitLot(location) {
   // A book moved to a new shelf keeps only its latest location.
   const moving = new Set(slips.map((slip) => slip.sku));
   saved = saved.filter((entry) => !moving.has(entry.sku));
@@ -243,10 +266,8 @@ function saveLot() {
   save('bookscanner.locations', saved);
   toast(`Saved ${plural(slips.length, 'book')} to ${location}`);
   slips = [];
-  // The location stays, ready for the next lot going into the same shelf or tub.
   persistShelf();
   renderSaved();
-  $('spoken').focus();
 }
 
 function locationsFilename() {
