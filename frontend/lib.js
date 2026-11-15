@@ -415,16 +415,23 @@ export function formatSku(text, lower = false) {
  *   "... new tub 13 T 3290"   -> moves to TUB 13, then T-3290 goes there
  *   "tub B T 25", "shelf W 1 dash 2" -> moves to BT-25, W1-2 (a code is used as it is)
  *
+ * With a default prefix, a number said alone takes it: with prefix KEV,
+ * "231 and 232 and G 5560" -> KEV-231, KEV-232, G-5560. Saying "prefix G" changes the
+ * default from there on.
+ *
  * Returns { steps, entries, undo }. `steps` is everything in spoken order: { sku, qty }
- * for a SKU and { location } for a move to another shelf or tub. `entries` is the SKUs
+ * for a SKU, { location } for a move to another shelf or tub, and { prefix } for a change
+ * of default prefix. `entries` is the SKUs
  * alone. `undo` counts "undo" commands that had nothing in this text to remove, so the
  * caller can remove earlier entries.
  */
-export function parseSpokenSkus(text) {
+export function parseSpokenSkus(text, options = {}) {
+  let prefix = String(options.prefix ?? '').trim().replace(/-+$/, '');
   let words = String(text ?? '').toLowerCase()
     .replace(/\b(?:scratch that|delete last|remove last|undo)\b/g, ' #undo ')
     .replace(/\b(?:quantity|quantities|qty|count|times)\b/g, ' #qty ')
     .replace(/\b(?:lower ?case|small)\b/g, ' #lower ')
+    .replace(/\bprefix\b/g, ' #prefix ')
     .replace(/\b(?:new |next )?(tub|shelf|box|bin|tote|crate|rack|bay|location)\b/g, ' #loc=$1 ')
     .replace(/\bdouble (?:you|u)\b/g, ' w ')
     .replace(/\b(?:dash|hyphen|minus)\b/g, ' - ')
@@ -450,6 +457,7 @@ export function parseSpokenSkus(text) {
   let current = '';
   let lower = false;
   let locating = ''; // the word that announced a shelf or tub, while its name is being heard
+  let naming = false; // true while a new default prefix is being heard
   const complete = () => /[a-z]/.test(current) && /\d$/.test(current);
   const flush = () => {
     const code = formatSku(current, lower);
@@ -460,12 +468,19 @@ export function parseSpokenSkus(text) {
       if (isCode) steps.push({ location: code });
       else if (code && locating !== 'location') steps.push({ location: `${locating} ${code}`.toUpperCase() });
       else if (code) steps.push({ location: code });
+    } else if (naming) {
+      // A prefix is taken as spoken, with no dash added: W 1 stays W1.
+      const name = (lower ? current.toLowerCase() : current.toUpperCase()).replace(/[^A-Za-z0-9-]/g, '').replace(/^-+|-+$/g, '');
+      if (name) { prefix = name; steps.push({ prefix }); }
     } else if (isCode) {
       steps.push({ sku: code, qty: 1 });
+    } else if (prefix && /^\d+$/.test(code)) {
+      steps.push({ sku: `${prefix}-${code}`, qty: 1 }); // a number alone takes the default prefix
     }
     current = '';
     lower = false;
     locating = '';
+    naming = false;
   };
 
   for (let i = 0; i < tokens.length; i++) {
@@ -485,6 +500,9 @@ export function parseSpokenSkus(text) {
     } else if (token === '#lower') {
       flush();
       lower = true;
+    } else if (token === '#prefix') {
+      flush();
+      naming = true;
     } else if (/^x\d{1,3}$/.test(token) && (complete() || (!current && lastSku()))) {
       flush();
       lastSku().qty = parseInt(token.slice(1), 10); // "x3"
@@ -493,7 +511,10 @@ export function parseSpokenSkus(text) {
     } else if (/^[a-z0-9-]+$/.test(token)) {
       // A letter arriving after a finished prefix-and-number starts the next SKU. So does
       // a letter after a location that was only a number, as in "tub 12 L 1233".
-      if (/^[a-z]/.test(token) && (complete() || (locating && /^\d+$/.test(current)))) flush();
+      const bareNumber = /^\d+$/.test(current);
+      if (/^[a-z]/.test(token) && (complete() || ((locating || prefix) && bareNumber))) flush();
+      // Two whole numbers in a row are two books, and a whole number ends a spoken prefix.
+      else if (/^\d{3,}$/.test(token) && !locating && ((prefix && bareNumber && current.length >= 3) || (naming && current))) flush();
       current += token;
     }
   }

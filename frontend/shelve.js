@@ -163,8 +163,10 @@ function describe(entries) {
 }
 
 /** Show what the text in the box will become, so a misheard SKU is caught before it is added. */
+const spokenOptions = () => ({ prefix: $('prefix').value.trim() });
+
 function renderPreview() {
-  const { steps, undo } = parseSpokenSkus($('spoken').value);
+  const { steps, undo } = parseSpokenSkus($('spoken').value, spokenOptions());
   const parts = [];
   if (undo) parts.push(`Will remove the last ${plural(undo, 'SKU')}`);
   // Read out the steps in order: SKUs for the current shelf, then each move and what follows it.
@@ -172,7 +174,7 @@ function renderPreview() {
   const closeRun = () => { if (run.length) parts.push(`Will add: ${describe(run)}`); run = []; };
   for (const step of steps) {
     if (step.sku) run.push(step);
-    else { closeRun(); parts.push(`Move to ${step.location}`); }
+    else { closeRun(); parts.push(step.prefix ? `Prefix ${step.prefix}` : `Move to ${step.location}`); }
   }
   closeRun();
   $('preview').textContent = parts.join(' · ');
@@ -181,9 +183,13 @@ function renderPreview() {
 
 function addSpoken() {
   const box = $('spoken');
-  const { steps, undo } = parseSpokenSkus(box.value);
+  const { steps, undo } = parseSpokenSkus(box.value, spokenOptions());
   if (steps.length === 0 && undo === 0) {
-    if (box.value.trim()) toast('No SKU found in that. A SKU needs letters and a number, like L 1233.');
+    if (box.value.trim()) {
+      toast($('prefix').value.trim()
+        ? 'No SKU found in that. Say the numbers, or letters and a number like L 1233.'
+        : 'No SKU found in that. Set a SKU prefix to say just the numbers, or say letters and a number like L 1233.');
+    }
     box.focus();
     return;
   }
@@ -193,6 +199,9 @@ function addSpoken() {
   for (const step of steps) {
     if (step.sku) {
       if (addSlip(resolveSkuCase(step.sku, inventory), step.qty)) added++;
+    } else if (step.prefix) {
+      $('prefix').value = step.prefix;
+      save('bookscanner.shelfPrefix', step.prefix);
     } else {
       // Moving on: what was said so far belongs to the shelf or tub being left.
       if (slips.length && $('location').value.trim()) commitLot($('location').value.trim());
@@ -608,6 +617,11 @@ document.addEventListener('visibilitychange', () => {
 
 // Pick up where the lot was left, so switching to the scanner and back loses nothing.
 $('location').value = load('bookscanner.shelfLocation', '');
+$('prefix').value = load('bookscanner.shelfPrefix', '');
+$('prefix').addEventListener('input', () => {
+  save('bookscanner.shelfPrefix', $('prefix').value.trim());
+  renderPreview();
+});
 renderSlips();
 renderSaved();
 renderInventory();

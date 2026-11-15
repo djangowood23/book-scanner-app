@@ -199,6 +199,23 @@ test('a new shelf or tub can be named in the flow', () => {
   assert.deepEqual(parseSpokenSkus('tub 13 T 3290').entries, [{ sku: 'T-3290', qty: 1 }]);
 });
 
+test('a default prefix lets the numbers be said alone', () => {
+  const skus = (text, prefix) => parseSpokenSkus(text, { prefix }).steps.map((step) => step.prefix ? `prefix ${step.prefix}` : step.qty === 1 ? step.sku : `${step.sku} x${step.qty}`);
+  assert.deepEqual(skus('231 and 232 and 1', 'KEV'), ['KEV-231', 'KEV-232', 'KEV-1']);
+  assert.deepEqual(skus('zero zero one and 12 33', 'KEV'), ['KEV-001', 'KEV-1233']);
+  assert.deepEqual(skus('1233 1234 quantity 2', 'G'), ['G-1233', 'G-1234 x2'], 'whole numbers in a row are separate books');
+  assert.deepEqual(skus('55 and 56', 'W1'), ['W1-55', 'W1-56']);
+  assert.deepEqual(skus('231 and G 5560 and 232', 'KEV'), ['KEV-231', 'G-5560', 'KEV-232'], 'a spoken prefix wins for that book');
+  assert.deepEqual(skus('231 K E V 232', 'G'), ['G-231', 'KEV-232']);
+  assert.deepEqual(skus('231 undo 232', 'G'), ['G-232']);
+  assert.deepEqual(parseSpokenSkus('tub 12 and 231', { prefix: 'G' }).steps, [{ location: 'TUB 12' }, { sku: 'G-231', qty: 1 }]);
+  assert.deepEqual(skus('231 and 232', ''), [], 'without a prefix a bare number is not a SKU');
+  // Changing the default by voice.
+  assert.deepEqual(skus('prefix K E V and 231 and 232'), ['prefix KEV', 'KEV-231', 'KEV-232']);
+  assert.deepEqual(skus('5560 prefix W 1 and 2 and 3', 'G'), ['G-5560', 'prefix W1', 'W1-2', 'W1-3']);
+  assert.deepEqual(skus('prefix G 1233 and 1234'), ['prefix G', 'G-1233', 'G-1234']);
+});
+
 test('case is taken from the inventory when it is unambiguous', () => {
   const inventory = { 'g-8425': '', 'K-5405': '', 'G-5560': '', 'g-5560': '' };
   assert.equal(resolveSkuCase('G-8425', inventory), 'g-8425');

@@ -327,6 +327,7 @@ dialog h2 { margin-bottom: 16px; }
   .slip-title { margin: 1.1in 0 0; font: 400 8pt/1.25 var(--sans); color: #444; overflow-wrap: anywhere; }
 }
 
+.prefix-field { flex: 0 0 116px; }
 .preview { margin: 0; padding: 9px 12px; border-radius: 10px; background: var(--accent-soft); color: var(--accent); font-weight: 600; font-size: .95rem; overflow-wrap: anywhere; }
 .camera-option > summary { font-weight: 600; cursor: pointer; color: var(--muted); }
 .camera-option[open] > summary { margin-bottom: 14px; }
