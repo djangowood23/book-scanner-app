@@ -134,7 +134,7 @@ test('SKU matching against the inventory', () => {
 
 test('locations file', () => {
   assert.equal(buildLocationsCsv([{ sku: 'K-5405', location: 'Tub 12' }, { sku: 'T-1', location: 'Shelf A, row 2', qty: 3 }]),
-    'sku,location,qty\nK-5405,Tub 12,1\nT-1,"Shelf A, row 2",3');
+    'sku,location,qty,image,language\nK-5405,Tub 12,1,,\nT-1,"Shelf A, row 2",3,,');
 });
 
 import { buildSlipsPdf } from '../frontend/lib.js';
@@ -223,4 +223,121 @@ test('case is taken from the inventory when it is unambiguous', () => {
   assert.equal(resolveSkuCase('G-5560', inventory), 'G-5560');
   assert.equal(resolveSkuCase('Z-1', inventory), 'Z-1');
   assert.equal(resolveSkuCase('Z-1', {}), 'Z-1');
+});
+
+import {
+  cleanTitle, guessLanguage, isBadImage, parseDelimited, parseInventoryRecords, packInventory, planLocations,
+  resolveSku, unpackInventory,
+} from '../frontend/lib.js';
+
+test('delimited parsing handles quoted cells', () => {
+  assert.deepEqual(parseDelimited('sku\ttitle\tnotes\r\nA-1\t"Tab\tinside"\t"She said ""hi"""\r\nA-2\tPlain\t\r\n'),
+    [['sku', 'title', 'notes'], ['A-1', 'Tab\tinside', 'She said "hi"'], ['A-2', 'Plain', '']]);
+  // A quote that never closes is literal and does not swallow the following rows.
+  assert.deepEqual(parseDelimited('sku\ttitle\nA-1\t"Unclosed title\nA-2\t12" record\nA-3\tOK'),
+    [['sku', 'title'], ['A-1', '"Unclosed title'], ['A-2', '12" record'], ['A-3', 'OK']]);
+  assert.deepEqual(parseDelimited('sku,title\nA-1,"Line one\nline two, with comma"\nA-2,"x"'),
+    [['sku', 'title'], ['A-1', 'Line one\nline two, with comma'], ['A-2', 'x']]);
+  assert.deepEqual(parseDelimited(''), []);
+});
+
+test('inventory records keep the fields the fix-up needs', () => {
+  const file = 'SKU\tprice\tTitle\tAuthor\tMedia\tImage\tqty\nSKU-KEV-481\t20\tOld Book\tA. Writer\tHardcover\thttp://ecx.images-amazon.com/x.jpg\t0\n';
+  const { records, has } = parseInventoryRecords(file);
+  assert.deepEqual(records, { 'SKU-KEV-481': { title: 'Old Book', author: 'A. Writer', media: 'Hardcover', image: 'http://ecx.images-amazon.com/x.jpg', language: '' } });
+  assert.deepEqual(has, { title: true, author: true, media: true, image: true, language: false });
+  assert.deepEqual(unpackInventory(packInventory(records)), records);
+  assert.equal(parseInventoryRecords('title\nx'), null);
+});
+
+const INVENTORY = {
+  'SKU-KEV-481': { title: 'LYRISCHE GEDICHTE [Hardcover] HERMANN PALM', author: 'Hermann Palm', media: 'Hardcover', image: 'http://ecx.images-amazon.com/images/I/51MGMifsJvL._SL75_.jpg', language: '' },
+  'G-7374': { title: 'A History of Rome', author: '', media: 'Paperback', image: 'https://storage.googleapis.com/aob-scanner-book-images/book_covers/G-7374.png', language: 'English' },
+  'g-8425': { title: 'Maps', author: '', media: '', image: 'Publishers', language: 'English' },
+  'IN-5': { title: 'Really starts with IN', author: '', media: '', image: '', language: '' },
+};
+
+test('the real export shape: many columns, lowercase languages, stray quotes', () => {
+  const filler = Array.from({ length: 130 }, (_, i) => `c${i}`);
+  const header = ['sku', ...filler.slice(0, 60), 'title', 'author', 'image', 'media', 'language', ...filler.slice(60)].join('\t');
+  const line = (sku, title, language) => [sku, ...filler.slice(0, 60).map(() => ''), title, 'Someone', 'Publishers', 'Hardcover', language, ...filler.slice(60).map(() => '')].join('\t');
+  const file = [header, line('A-1', 'The 12" Single', 'english'), line('A-2', '"Quoted" at the start', ''), line('A-3', '"Wholly quoted"', 'polish')].join('\r\n');
+  const { records, has } = parseInventoryRecords(file);
+  assert.deepEqual(Object.keys(records), ['A-1', 'A-2', 'A-3']);
+  assert.equal(records['A-1'].title, 'The 12" Single');
+  assert.equal(records['A-2'].title, '"Quoted" at the start');
+  assert.equal(records['A-3'].title, 'Wholly quoted');
+  assert.equal(records['A-3'].language, 'polish');
+  assert.ok(has.image && has.language && has.author && has.media);
+  // Any language already there is left alone, whatever it is; only a blank is guessed.
+  const rows = planLocations(Object.keys(records).map((sku) => ({ sku, location: 'X', qty: 1 })), records, has).rows;
+  assert.deepEqual(rows.map((row) => row.language), ['', 'English', '']);
+});
+
+test('SKU resolution', () => {
+  assert.deepEqual(resolveSku('G-7374', INVENTORY), { sku: 'G-7374', status: 'ok' });
+  assert.deepEqual(resolveSku('G-8425', INVENTORY), { sku: 'g-8425', status: 'ok' }, 'case comes from the inventory');
+  // Old books entered with "SKU-" in front.
+  assert.deepEqual(resolveSku('KEV-481', INVENTORY), { sku: 'SKU-KEV-481', status: 'corrected', from: 'KEV-481' });
+  assert.deepEqual(resolveSku('kev-481', INVENTORY), { sku: 'SKU-KEV-481', status: 'corrected', from: 'kev-481' });
+  // Dictation heard "and" as "in".
+  assert.deepEqual(resolveSku('IN-7374', INVENTORY, 'G'), { sku: 'G-7374', status: 'corrected', from: 'IN-7374' });
+  assert.deepEqual(resolveSku('IN-481', INVENTORY, 'KEV'), { sku: 'SKU-KEV-481', status: 'corrected', from: 'IN-481' });
+  assert.deepEqual(resolveSku('IN-7374', INVENTORY), { sku: 'IN-7374', status: 'unknown' }, 'no prefix, no guess');
+  assert.deepEqual(resolveSku('IN-9999', INVENTORY, 'G'), { sku: 'IN-9999', status: 'unknown' }, 'a guess not in the inventory is not used');
+  assert.deepEqual(resolveSku('IN-5', INVENTORY, 'G'), { sku: 'IN-5', status: 'ok' }, 'a real IN SKU is left alone');
+  assert.deepEqual(resolveSku('ZZ-1', INVENTORY), { sku: 'ZZ-1', status: 'unknown' });
+  assert.deepEqual(resolveSku('ZZ-1', {}), { sku: 'ZZ-1', status: 'unverified' });
+});
+
+test('bad images', () => {
+  assert.ok(isBadImage('http://ecx.images-amazon.com/images/I/51MGMifsJvL._SL75_.jpg'));
+  assert.ok(isBadImage('http://g-ecx.images-amazon.com/images/G/01/x-site/icons/no-img-sm._CB192198896_.gif'));
+  assert.ok(isBadImage('Publishers'));
+  assert.ok(isBadImage(''));
+  assert.ok(isBadImage(undefined));
+  assert.ok(isBadImage('https://m.media-amazon.com/images/I/x.jpg'));
+  assert.ok(!isBadImage('https://storage.googleapis.com/aob-scanner-book-images/book_covers/K-5405.png'));
+  assert.ok(!isBadImage('https://sage-biscochitos-e77053.netlify.app/img/0b1c2d3e-0000-4000-8000-000000000000.png'));
+});
+
+test('title cleanup and language guess', () => {
+  const title = 'LYRISCHE GEDICHTE [Hardcover] HERMANN PALM';
+  assert.equal(cleanTitle(title), 'Lyrische Gedichte');
+  assert.equal(guessLanguage(title), 'German');
+  assert.equal(cleanTitle('The Old Man and the Sea [Paperback] Hemingway, Ernest.'), 'The Old Man and the Sea');
+  assert.equal(cleanTitle('A HISTORY OF THE WORLD IN 100 OBJECTS.'), 'A History of the World in 100 Objects');
+  assert.equal(cleanTitle('Mixed Case Stays: As It Is,'), 'Mixed Case Stays: As It Is');
+  assert.equal(guessLanguage('A History of Rome'), 'English');
+  assert.equal(guessLanguage('Dune'), 'English');
+  assert.equal(guessLanguage('The School of Athens'), 'English');
+  assert.equal(guessLanguage('Die Geschichte der deutschen Literatur'), 'German');
+  assert.equal(guessLanguage('Les Fleurs du mal'), 'French');
+  assert.equal(guessLanguage('Cien años de soledad'), 'Spanish');
+  assert.equal(guessLanguage('Il nome della rosa'), 'Italian');
+});
+
+test('what goes into the file for AOB', () => {
+  const has = { title: true, author: true, media: true, image: true, language: true };
+  const saved = [
+    { sku: 'SKU-KEV-481', location: 'BT-25', qty: 1, from: 'KEV-481' },
+    { sku: 'G-7374', location: 'BT-25', qty: 2 },
+    { sku: 'ZZ-1', location: 'BT-25', qty: 1 },
+  ];
+  const { rows, notSent } = planLocations(saved, INVENTORY, has);
+  assert.deepEqual(notSent.map((entry) => entry.sku), ['ZZ-1']);
+  assert.deepEqual(rows.map((row) => [row.sku, row.needsImage, row.language]), [['SKU-KEV-481', true, 'German'], ['G-7374', false, '']]);
+  rows[0].image = 'https://sage-biscochitos-e77053.netlify.app/img/abc.png';
+  const csv = buildLocationsCsv(rows);
+  assert.equal(csv, 'sku,location,qty,image,language\nSKU-KEV-481,BT-25,1,https://sage-biscochitos-e77053.netlify.app/img/abc.png,german\nG-7374,BT-25,2,,');
+  assert.ok(!csv.includes('ZZ-1'), 'an unknown SKU is left out');
+  assert.ok(csv.startsWith('sku,'));
+
+  // The seller's own choice of language wins over the guess.
+  assert.equal(planLocations([{ ...saved[0], language: 'English' }], INVENTORY, has).rows[0].language, 'English');
+  // Columns the inventory file did not have are not treated as blank.
+  const partial = planLocations(saved, INVENTORY, { image: false, language: false }).rows;
+  assert.deepEqual(partial.map((row) => [row.needsImage, row.language]), [[false, ''], [false, '']]);
+  // With no inventory nothing can be checked, so everything is sent as it is.
+  assert.deepEqual(planLocations(saved, {}).rows.map((row) => row.sku), ['SKU-KEV-481', 'G-7374', 'ZZ-1']);
 });

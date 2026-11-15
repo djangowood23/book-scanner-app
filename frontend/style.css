@@ -340,3 +340,13 @@ dialog h2 { margin-bottom: 16px; }
 .saved-group .title, .saved-group .meta { display: block; white-space: normal; }
 .saved-group details[open] summary { margin-bottom: 12px; }
 .saved-group .slips { margin-bottom: 8px; }
+
+.fixes { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.fixes span, .fixes button {
+  padding: 3px 10px; border-radius: 999px; font: 600 .78rem var(--sans);
+  background: var(--warn-soft); color: var(--warn); border: 1px solid transparent;
+}
+.fixes button { cursor: pointer; border-color: var(--warn); min-height: 30px; }
+#notSent { margin-top: 16px; padding-top: 4px; border-top: 1px solid var(--line); }
+#notSent h3 { color: var(--danger); margin-top: 14px; }
+#sendSummary { margin: 14px 0 0; }

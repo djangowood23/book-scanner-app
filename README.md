@@ -40,9 +40,40 @@ full. "prefix G" changes the default by voice.
 reads handwritten SKU slips, is an option further down the page.
 
 Each lot is saved under its location and kept on the device until it is sent or
-exported as `aob_locations_<timestamp>.csv` with `sku`, `location` and `qty`
-(1 unless a quantity was given). If an AOB inventory export is loaded, each SKU
-is checked against it and upper or lower case is taken from it.
+exported as `aob_locations_<timestamp>.csv`.
+
+### Old book fix-up
+
+The Shelve page checks every SKU against the AoB inventory and repairs old
+listings as they are shelved.
+
+- **Inventory.** Load an AoB inventory export once (tab-delimited; the columns
+  used are `sku`, `title`, `author`, `media`, `image`, `language`). It is saved
+  in Netlify Blobs behind the passcode, and every browser downloads it and
+  keeps a copy in IndexedDB, so the check works with no connection. The page
+  shows the date of the export. Load a new one only after a big cleanup.
+- **SKU resolution** (`resolveSku` in `frontend/lib.js`), for spoken, typed,
+  photographed and edited SKUs: an exact match, then the inventory's own upper
+  or lower case, then `SKU-` in front (`KEV-481` is `SKU-KEV-481`), then, for a
+  SKU starting with `IN`, the default prefix with the number, because dictation
+  hears "and" as "in" (`IN-7374` with prefix `G` is `G-7374`). A guess is used
+  only if it is in the inventory.
+- **Not sent.** AoB ignores a SKU it does not have without reporting an error,
+  so a row that still does not match is left out of the file and listed under
+  "Not in AoB" until its SKU is corrected.
+- **Images.** An inventory image is unusable if it is blank, not a web address,
+  or hosted by Amazon. For those books a 1200 x 1200 placeholder is drawn
+  (`frontend/placeholder.js`), stored the same way book photos are, and its
+  address on the live site goes in the file.
+- **Languages.** If the inventory has no language, one is guessed from the
+  title (German, French, Spanish, Italian, otherwise English) and shown on the
+  row, where a tap changes it. Any language already in AoB is left alone.
+- **The file** has `sku`, `location`, `qty`, `image`, `language`. `qty` is 1
+  unless a quantity was given; `image` and `language` are filled only on rows
+  that need them, since AoB ignores a blank cell.
+- **After sending**, a summary shows how many SKUs were corrected, images
+  replaced, languages filled and rows not sent, and the shared inventory is
+  updated so the same book is not fixed twice.
 
 ## Printing SKU slips
 
@@ -72,6 +103,8 @@ helper needs `APP_PASSCODE` to be set.
 | `netlify/functions/send.mts` | `POST /api/send`: delivers an export file to AOB over SFTP |
 | `netlify/functions/print.mts` | `POST /api/print` queues a slip sheet; `POST /api/print/next` hands it to the print helper |
 | `frontend/install-print-helper.sh` | Installs the print helper on a Mac |
+| `netlify/functions/inventory.mts` | `/api/inventory`: the shared AoB inventory snapshot |
+| `frontend/inventory.js`, `placeholder.js` | Inventory sync and cache; placeholder image drawing |
 | `netlify/functions/image.mts` | `GET /img/:name`: serves a stored photo |
 | `tests/` | `npm test` |
 
