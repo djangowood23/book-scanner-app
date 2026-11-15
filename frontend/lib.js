@@ -233,26 +233,107 @@ export function listingSize(bookW, bookH) {
 // ---------- shelving: check handwritten SKUs against the AOB inventory export ----------
 
 /**
- * Read an AOB inventory export (tab-delimited, or comma-separated) into { sku: title }.
- * Only the sku column is required. Returns null when there is no sku column.
+ * Split delimited text (tab if the first line has one, otherwise comma) into rows of
+ * cells. A cell wrapped in double quotes may contain the delimiter, and "" inside it is
+ * a literal quote. In comma files a quoted cell may also span lines. A quote that never
+ * closes is taken literally, so one stray quote cannot swallow the rest of the file.
  */
-export function parseInventory(text) {
-  const lines = String(text ?? '').replace(/^﻿/, '').split(/\r?\n/).filter((line) => line.trim());
-  if (lines.length === 0) return null;
-  const delimiter = lines[0].includes('\t') ? '\t' : ',';
-  const clean = (cell) => cell.trim().replace(/^"(.*)"$/, '$1').replace(/""/g, '"');
-  const headers = lines[0].split(delimiter).map((cell) => clean(cell).toLowerCase());
-  const skuAt = headers.indexOf('sku');
-  const titleAt = headers.indexOf('title');
-  if (skuAt === -1) return null;
-  const inventory = {};
-  for (const line of lines.slice(1)) {
-    const cells = line.split(delimiter);
-    const sku = clean(cells[skuAt] ?? '');
-    if (sku) inventory[sku] = titleAt === -1 ? '' : clean(cells[titleAt] ?? '');
+export function parseDelimited(text) {
+  const source = String(text ?? '').replace(/^﻿/, '');
+  const firstLine = source.slice(0, source.search(/\r?\n|$/));
+  const delimiter = firstLine.includes('\t') ? '\t' : ',';
+  const multiline = delimiter === ',';
+  const rows = [];
+  let row = [];
+  let i = 0;
+  const endRow = () => {
+    if (row.length > 1 || (row[0] ?? '').trim()) rows.push(row);
+    row = [];
+  };
+  while (i <= source.length) {
+    let cell = null;
+    if (source[i] === '"') {
+      // Find the quote that closes this cell: one followed by a delimiter, line end or the end.
+      let j = i + 1;
+      let value = '';
+      while (j < source.length) {
+        const ch = source[j];
+        if (ch === '"' && source[j + 1] === '"') { value += '"'; j += 2; continue; }
+        if (ch === '"') {
+          const after = source[j + 1];
+          if (after === undefined || after === delimiter || after === '\n' || after === '\r') { cell = value; i = j + 1; }
+          break;
+        }
+        if (!multiline && (ch === '\n' || ch === '\r')) break;
+        value += ch;
+        j++;
+      }
+    }
+    if (cell === null) {
+      let j = i;
+      while (j < source.length && source[j] !== delimiter && source[j] !== '\n' && source[j] !== '\r') j++;
+      cell = source.slice(i, j);
+      i = j;
+    }
+    row.push(cell.trim());
+    if (i >= source.length) { endRow(); break; }
+    if (source[i] === delimiter) { i++; continue; }
+    if (source[i] === '\r' && source[i + 1] === '\n') i++;
+    i++;
+    endRow();
   }
-  return inventory;
+  return rows;
 }
+
+export const INVENTORY_FIELDS = ['title', 'author', 'media', 'image', 'language'];
+
+/**
+ * Read an AOB inventory export into { records, has }. `records` maps each SKU to
+ * { title, author, media, image, language }; `has` says which of those columns the
+ * file actually contained, so a missing column is not mistaken for blank values.
+ * Returns null when there is no sku column.
+ */
+export function parseInventoryRecords(text) {
+  const rows = parseDelimited(text);
+  if (rows.length === 0) return null;
+  const headers = rows[0].map((cell) => cell.toLowerCase());
+  const skuAt = headers.indexOf('sku');
+  if (skuAt === -1) return null;
+  const at = Object.fromEntries(INVENTORY_FIELDS.map((field) => [field, headers.indexOf(field)]));
+  const has = Object.fromEntries(INVENTORY_FIELDS.map((field) => [field, at[field] !== -1]));
+  const records = {};
+  for (const cells of rows.slice(1)) {
+    const sku = cells[skuAt] ?? '';
+    if (!sku) continue;
+    const record = {};
+    for (const field of INVENTORY_FIELDS) record[field] = at[field] === -1 ? '' : (cells[at[field]] ?? '').slice(0, 400);
+    records[sku] = record;
+  }
+  return { records, has };
+}
+
+/** The older shape, { sku: title }. Returns null when there is no sku column. */
+export function parseInventory(text) {
+  const parsed = parseInventoryRecords(text);
+  if (!parsed) return null;
+  return Object.fromEntries(Object.entries(parsed.records).map(([sku, record]) => [sku, record.title]));
+}
+
+/** Inventory records as compact rows for storage, and back again. */
+export function packInventory(records) {
+  return Object.entries(records).map(([sku, record]) => [sku, ...INVENTORY_FIELDS.map((field) => record[field] ?? '')]);
+}
+
+export function unpackInventory(rows) {
+  const records = {};
+  for (const [sku, ...values] of rows ?? []) {
+    records[sku] = Object.fromEntries(INVENTORY_FIELDS.map((field, i) => [field, values[i] ?? '']));
+  }
+  return records;
+}
+
+/** An inventory entry may be a full record or, in older data, just the title. */
+const titleOf = (entry) => (typeof entry === 'string' ? entry : entry?.title ?? '');
 
 /** True when two strings are the same or differ by one changed, added or missing character. */
 export function withinOneEdit(a, b) {
@@ -280,15 +361,15 @@ function titleOverlap(a, b) {
  */
 export function matchSku(sku, inventory, seenTitle = '') {
   if (!inventory || Object.keys(inventory).length === 0) return { status: 'unverified', title: '', suggestions: [] };
-  if (Object.hasOwn(inventory, sku)) return { status: 'ok', title: inventory[sku], suggestions: [] };
+  if (Object.hasOwn(inventory, sku)) return { status: 'ok', title: titleOf(inventory[sku]), suggestions: [] };
   const lower = sku.toLowerCase();
   const suggestions = Object.keys(inventory)
     .filter((other) => withinOneEdit(lower, other.toLowerCase()))
     .map((other) => ({
       sku: other,
-      title: inventory[other],
+      title: titleOf(inventory[other]),
       // Same letters in different case is the likeliest slip of all; then a matching book title.
-      score: (other.toLowerCase() === lower ? 100 : 0) + titleOverlap(seenTitle, inventory[other]),
+      score: (other.toLowerCase() === lower ? 100 : 0) + titleOverlap(seenTitle, titleOf(inventory[other])),
     }))
     .sort((a, b) => b.score - a.score || a.sku.localeCompare(b.sku))
     .slice(0, 4)
@@ -296,11 +377,18 @@ export function matchSku(sku, inventory, seenTitle = '') {
   return { status: 'unknown', title: '', suggestions };
 }
 
-/** A file AOB can import to set each book's location and mark it in stock, touching nothing else. */
-export function buildLocationsCsv(assignments) {
-  // A book just placed on a shelf is in stock: quantity 1 unless the seller said otherwise.
-  const lines = ['sku,location,qty'];
-  for (const { sku, location, qty } of assignments) lines.push(`${escapeCsvCell(sku)},${escapeCsvCell(location)},${qty >= 1 ? qty : 1}`);
+/**
+ * A file AOB can import to set each book's location and mark it in stock. `image` and
+ * `language` are filled only on rows that need fixing; AOB ignores a blank cell, so the
+ * other rows keep what they have.
+ */
+export function buildLocationsCsv(rows) {
+  const lines = ['sku,location,qty,image,language'];
+  for (const { sku, location, qty, image, language } of rows) {
+    // A book just placed on a shelf is in stock: quantity 1 unless the seller said otherwise.
+    // AOB holds languages as lowercase words (english, german), so write them the same way.
+    lines.push([sku, location, qty >= 1 ? qty : 1, image ?? '', String(language ?? '').toLowerCase()].map(escapeCsvCell).join(','));
+  }
   return lines.join('\n');
 }
 
@@ -531,4 +619,148 @@ export function resolveSkuCase(sku, inventory) {
   const lower = sku.toLowerCase();
   const matches = Object.keys(inventory).filter((other) => other.toLowerCase() === lower);
   return matches.length === 1 ? matches[0] : sku;
+}
+
+// ---------- fixing up old books while shelving ----------
+
+export const PRODUCTION_ORIGIN = 'https://sage-biscochitos-e77053.netlify.app';
+
+const caseIndexes = new WeakMap();
+/** Lower-cased SKU -> the real SKUs spelled that way, built once per inventory object. */
+function caseIndex(inventory) {
+  let index = caseIndexes.get(inventory);
+  if (!index) {
+    index = new Map();
+    for (const sku of Object.keys(inventory)) {
+      const lower = sku.toLowerCase();
+      if (index.has(lower)) index.get(lower).push(sku); else index.set(lower, [sku]);
+    }
+    caseIndexes.set(inventory, index);
+  }
+  return index;
+}
+
+/** The inventory's own spelling of `sku`: an exact match, or the only one differing by case. */
+function findInInventory(sku, inventory) {
+  if (Object.hasOwn(inventory, sku)) return sku;
+  const matches = caseIndex(inventory).get(sku.toLowerCase()) ?? [];
+  return matches.length === 1 ? matches[0] : null;
+}
+
+/**
+ * Work out which inventory SKU a spoken, typed or photographed SKU means.
+ *
+ *   1. the SKU as given, then the same letters in the inventory's own case
+ *   2. "SKU-" in front of it (some old books were entered that way: KEV-481 is SKU-KEV-481)
+ *   3. if it starts with "IN", dictation may have heard the word "and": try the default
+ *      prefix with the number (IN-7374 with prefix G is G-7374), then "SKU-" in front
+ *
+ * A guess is only used when it is in the inventory. Returns { sku, status, from }:
+ * status is 'ok', 'corrected' (the SKU was changed by rule 2 or 3; `from` is what was
+ * given), 'unknown' (not found, SKU unchanged) or 'unverified' (no inventory to check).
+ */
+export function resolveSku(sku, inventory, prefix = '') {
+  if (!inventory || Object.keys(inventory).length === 0) return { sku, status: 'unverified' };
+  const own = findInInventory(sku, inventory);
+  if (own) return { sku: own, status: 'ok' };
+
+  const guesses = [`SKU-${sku}`];
+  const misheard = /^in-?(\d.*)$/i.exec(sku);
+  const base = String(prefix ?? '').trim().replace(/-+$/, '');
+  if (misheard && base) guesses.push(`${base}-${misheard[1]}`, `SKU-${base}-${misheard[1]}`);
+  for (const guess of guesses) {
+    const found = findInInventory(guess, inventory);
+    if (found) return { sku: found, status: 'corrected', from: sku };
+  }
+  return { sku, status: 'unknown' };
+}
+
+/**
+ * True when an inventory image is no use to a marketplace: blank, not a web address, or
+ * hosted by Amazon (which other sites cannot fetch).
+ */
+export function isBadImage(image) {
+  const text = String(image ?? '').trim();
+  if (!/^https?:\/\//i.test(text)) return true;
+  try {
+    return new URL(text).hostname.toLowerCase().includes('amazon');
+  } catch {
+    return true;
+  }
+}
+
+const BINDING_TAG = /\s*\[(?:paperback|hardcover|unknown binding|mass market paperback|library binding|board book|spiral-bound|leather bound)\].*$/i;
+const SMALL_WORDS = new Set(['a', 'an', 'and', 'as', 'at', 'by', 'for', 'in', 'of', 'on', 'or', 'the', 'to']);
+
+/**
+ * A title fit to print on a placeholder image: the binding tag and anything after it
+ * dropped, trailing punctuation dropped, and ALL CAPITALS turned into title case.
+ */
+export function cleanTitle(title) {
+  let text = String(title ?? '').replace(BINDING_TAG, '').replace(/[\s.,;:\/\-–—]+$/, '').trim();
+  if (text && text === text.toUpperCase() && /[A-ZÀ-Þ]/.test(text)) {
+    text = text.toLowerCase().split(/\s+/).map((word, i) => (
+      i > 0 && SMALL_WORDS.has(word) ? word : word.replace(/^[^a-zà-ÿ]*[a-zà-ÿ]/, (start) => start.toUpperCase())
+    )).join(' ');
+  }
+  return text;
+}
+
+export const LANGUAGES = ['English', 'German', 'French', 'Spanish', 'Italian'];
+
+// Common short words (worth 2) and tell-tale spellings (worth 1) for each language.
+const LANGUAGE_CUES = {
+  English: { words: ['the', 'of', 'and', 'in', 'to', 'for', 'with', 'on', 'by', 'from', 'an', 'is', 'how', 'my', 'new'], marks: /\b\w+(?:ing|tion|ness)\b/g },
+  German: { words: ['der', 'die', 'das', 'und', 'ein', 'eine', 'von', 'zu', 'mit', 'für', 'fur', 'den', 'dem', 'des', 'im', 'auf', 'aus', 'über', 'zur', 'zum', 'ist', 'nicht'], marks: /[äöüß]|sch|\b\w+(?:ung|keit|lich|ische|isch|ichte|buch|werke)\b|gedicht|geschicht/g },
+  French: { words: ['le', 'les', 'des', 'du', 'et', 'une', 'dans', 'pour', 'sur', 'avec', 'au', 'aux', 'est', 'ou', 'ses', 'son'], marks: /[çœ]|[éèêàù]|\b[ldjn]'|\b\w+(?:eux|eaux|tion|ique)\b/g },
+  Spanish: { words: ['el', 'los', 'las', 'del', 'y', 'una', 'para', 'por', 'con', 'como', 'su', 'al', 'es', 'historia'], marks: /[ñ¿¡]|[áíóú]|\b\w+(?:ción|dad|illo|illa)\b/g },
+  Italian: { words: ['il', 'lo', 'gli', 'di', 'della', 'dello', 'dei', 'degli', 'delle', 'nel', 'nella', 'per', 'che', 'e', 'storia'], marks: /[ìò]|\b\w+(?:zione|ità|ello|etto|ggi)\b/g },
+};
+
+/**
+ * Guess the language of a book from its title: German, French, Spanish or Italian when
+ * the title clearly points that way, otherwise English.
+ */
+export function guessLanguage(title) {
+  const text = cleanTitle(title).toLowerCase();
+  const words = text.split(/[^a-zà-ÿ']+/).filter(Boolean);
+  let best = 'English';
+  let bestScore = 0;
+  for (const language of LANGUAGES) {
+    const cues = LANGUAGE_CUES[language];
+    let score = words.filter((word) => cues.words.includes(word)).length * 2;
+    score += (text.match(cues.marks) ?? []).length;
+    // English is the default, so another language has to beat it outright.
+    if (score > bestScore) { best = language; bestScore = score; }
+  }
+  return best;
+}
+
+/**
+ * Decide what goes into the file for AOB. `entries` are the saved rows
+ * { sku, location, qty, from?, language? }; `inventory` maps SKU to record; `has` says
+ * which columns the inventory file contained.
+ *
+ * Returns { rows, notSent }. Each row keeps a reference to its saved `entry`. A row whose SKU is not in the inventory is held back in
+ * `notSent`, because AOB silently ignores it. Each row to send carries `needsImage`
+ * (its inventory image is unusable) and `language` (filled only when the inventory has
+ * none). With no inventory at all, every row is sent as it is.
+ */
+export function planLocations(entries, inventory, has = {}) {
+  const rows = [];
+  const notSent = [];
+  const checked = inventory && Object.keys(inventory).length > 0;
+  for (const entry of entries) {
+    const base = { sku: entry.sku, location: entry.location, qty: entry.qty ?? 1, from: entry.from, entry };
+    if (!checked) { rows.push(base); continue; }
+    const record = Object.hasOwn(inventory, entry.sku) ? inventory[entry.sku] : null;
+    if (!record) { notSent.push(entry); continue; }
+    rows.push({
+      ...base,
+      record,
+      needsImage: Boolean(has.image) && isBadImage(record.image),
+      language: has.language && !String(record.language ?? '').trim() ? entry.language || guessLanguage(record.title) : '',
+    });
+  }
+  return { rows, notSent };
 }
